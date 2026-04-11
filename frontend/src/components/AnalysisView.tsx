@@ -27,7 +27,7 @@ const STATUS_LABELS: Record<string, { text: string; color: string }> = {
 };
 
 export default function AnalysisView({
-  companyId,
+  companyId: _companyId,
   companyName,
   reports,
   analyses,
@@ -42,7 +42,7 @@ export default function AnalysisView({
   const hasActiveJob = relevantAnalyses.some(
     (a) => a.status === "pending" || a.status === "running",
   );
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   useEffect(() => {
     if (hasActiveJob) {

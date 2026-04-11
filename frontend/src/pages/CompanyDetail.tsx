@@ -132,7 +132,7 @@ export default function CompanyDetail() {
       {tab === "reports" && (
         <ReportTable
           reports={reports}
-          onAnalyze={(reportId) => {
+          onAnalyze={(_reportId) => {
             setTab("subsidiary");
           }}
         />
