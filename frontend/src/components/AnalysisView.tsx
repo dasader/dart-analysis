@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { runAnalysis } from "../api/client";
+import PrintableReport from "./PrintableReport";
 import type { Analysis, Report } from "../types";
 
 interface Props {
   companyId: number;
+  companyName: string;
   reports: Report[];
   analyses: Analysis[];
   analysisType: "subsidiary" | "rnd" | "national_tech";
@@ -26,6 +28,7 @@ const STATUS_LABELS: Record<string, { text: string; color: string }> = {
 
 export default function AnalysisView({
   companyId,
+  companyName,
   reports,
   analyses,
   analysisType,
@@ -163,6 +166,13 @@ export default function AnalysisView({
           <article className="prose prose-sm max-w-none prose-headings:text-navy prose-h2:text-base prose-h2:font-semibold prose-h3:text-sm prose-h3:font-semibold prose-p:text-text-primary prose-p:leading-relaxed prose-table:text-sm prose-th:bg-background/50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 prose-li:text-text-primary">
             <ReactMarkdown>{selectedAnalysis.result_summary || ""}</ReactMarkdown>
           </article>
+          {selectedReport && (
+            <PrintableReport
+              companyName={companyName}
+              fiscalYear={selectedReport.fiscal_year}
+              analysis={selectedAnalysis}
+            />
+          )}
         </div>
       ) : selectedAnalysis &&
         (selectedAnalysis.status === "pending" ||

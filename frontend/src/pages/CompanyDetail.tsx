@@ -141,6 +141,7 @@ export default function CompanyDetail() {
       {tab !== "reports" && (
         <AnalysisView
           companyId={companyId}
+          companyName={company.corp_name}
           reports={reports}
           analyses={analyses}
           analysisType={tab}
