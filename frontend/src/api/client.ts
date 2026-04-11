@@ -79,6 +79,14 @@ export function checkNewReports(
   return request(`/companies/${companyId}/reports/check`);
 }
 
+export function deleteReport(reportId: number): Promise<void> {
+  return request(`/reports/${reportId}`, { method: "DELETE" });
+}
+
+export function redownloadReport(reportId: number): Promise<Report> {
+  return request(`/reports/${reportId}/redownload`, { method: "POST" });
+}
+
 export function fetchReportContent(
   reportId: number,
 ): Promise<{ report_id: number; content: string }> {
@@ -107,6 +115,12 @@ export function fetchAnalysis(analysisId: number): Promise<Analysis> {
 
 export function fetchCompanyAnalyses(companyId: number): Promise<Analysis[]> {
   return request(`/companies/${companyId}/analyses`);
+}
+
+export function analyzeReport(
+  reportId: number,
+): Promise<{ message: string; queued: number }> {
+  return request(`/reports/${reportId}/analyze-all`, { method: "POST" });
 }
 
 export function analyzeAll(

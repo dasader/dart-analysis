@@ -1,8 +1,9 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @theme {
   --font-sans: "Pretendard", "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", "Pretendard", ui-monospace, monospace;
 
   --color-navy: #1B2A4A;
   --color-navy-light: #2D4A7A;
@@ -34,9 +35,12 @@ body {
 /* Print styles */
 @media print {
   body {
-    background: white;
-    color: black;
-    font-size: 11pt;
+    background: white !important;
+    color: #111 !important;
+    font-size: 10.5pt;
+    font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .no-print {
@@ -47,14 +51,131 @@ body {
     display: block !important;
   }
 
-  table {
-    border-collapse: collapse;
+  /* 커버 헤더 */
+  .print-cover {
+    margin-bottom: 20pt;
+    padding-bottom: 12pt;
+    border-bottom: 2pt solid #1B2A4A;
+    page-break-after: avoid;
   }
 
-  table th,
-  table td {
-    border: 1px solid #ccc;
-    padding: 4px 8px;
+  .print-company {
+    font-size: 18pt;
+    font-weight: 700;
+    color: #1B2A4A;
+    margin: 0 0 4pt;
+  }
+
+  .print-subtitle {
+    font-size: 13pt;
+    color: #374151;
+    margin: 0 0 6pt;
+  }
+
+  .print-meta {
+    font-size: 8pt;
+    color: #6B7280;
+    margin: 0;
+  }
+
+  /* 섹션 제목 */
+  .print-section-title {
+    font-size: 13pt;
+    font-weight: 700;
+    color: #1B2A4A;
+    margin: 16pt 0 8pt;
+    padding: 6pt 0 6pt;
+    border-bottom: 1.5pt solid #1B2A4A;
+    page-break-after: avoid;
+  }
+
+  /* 섹션 구분 페이지 나누기 */
+  .print-page-break {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  /* 푸터 */
+  .print-footer {
+    margin-top: 20pt;
+    padding-top: 6pt;
+    border-top: 0.5pt solid #ccc;
+    font-size: 7.5pt;
+    color: #9CA3AF;
+  }
+
+  /* ── 표 수정 ── */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    font-size: 8.5pt;
+    table-layout: fixed;
+    word-break: break-word;
+    margin: 10pt 0;
+    page-break-inside: auto;
+  }
+
+  /* 표 헤더를 페이지마다 반복 */
+  thead {
+    display: table-header-group;
+  }
+
+  /* 행 단위 분리 방지 */
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  th, td {
+    border: 0.75pt solid #666 !important;
+    padding: 3pt 6pt !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    vertical-align: top;
+    background-color: transparent !important;
+  }
+
+  th {
+    background-color: #f3f4f6 !important;
+    font-weight: 600;
+    color: #1B2A4A !important;
+  }
+
+  /* prose 스타일 인쇄 보정 */
+  h1, h2, h3, h4 {
+    color: #1B2A4A;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  p, li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  a {
+    color: #111 !important;
+    text-decoration: none;
+  }
+
+  code {
+    font-size: 8pt;
+    background: #f3f4f6 !important;
+    padding: 0 3pt;
+    border-radius: 2pt;
+  }
+
+  hr {
+    border: none;
+    border-top: 0.5pt solid #ccc !important;
+    margin: 10pt 0;
+  }
+
+  blockquote {
+    border-left: 3pt solid #2563EB !important;
+    padding-left: 8pt;
+    color: #374151 !important;
+    margin: 8pt 0;
   }
 }
 

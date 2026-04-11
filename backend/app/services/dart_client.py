@@ -85,13 +85,16 @@ async def list_reports(
 
 
 def _classify_report(name: str) -> str | None:
-    """보고서명에서 유형 분류."""
+    """보고서명에서 유형 분류.
+
+    - 정정보고서: 일부 내용만 포함되어 분석 부적합 → 제외
+    - 반기/분기보고서: 분석 대상 아님 → 제외
+    - 사업보고서만 수집
+    """
+    if "정정" in name:
+        return None
     if "사업보고서" in name:
         return "사업보고서"
-    if "반기보고서" in name:
-        return "반기보고서"
-    if "분기보고서" in name:
-        return "분기보고서"
     return None
 
 

@@ -16,7 +16,6 @@ export default function DownloadModal({
 }: Props) {
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
-  const [reportType, setReportType] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -26,10 +25,7 @@ export default function DownloadModal({
     setLoading(true);
     setError("");
     try {
-      await downloadReports(companyId, {
-        fiscal_year: year,
-        report_type: reportType || undefined,
-      });
+      await downloadReports(companyId, { fiscal_year: year });
       onDownloaded();
       onClose();
     } catch (e: any) {
@@ -78,16 +74,12 @@ export default function DownloadModal({
             <label className="mb-1 block text-sm font-medium text-text-secondary">
               보고서 유형
             </label>
-            <select
-              value={reportType}
-              onChange={(e) => setReportType(e.target.value)}
-              className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent"
-            >
-              <option value="">전체</option>
-              <option value="사업보고서">사업보고서</option>
-              <option value="반기보고서">반기보고서</option>
-              <option value="분기보고서">분기보고서</option>
-            </select>
+            <div className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-text-secondary">
+              사업보고서
+            </div>
+            <p className="mt-1 text-xs text-text-tertiary">
+              반기·분기보고서는 수집 대상에서 제외됩니다.
+            </p>
           </div>
 
           {error && <p className="text-sm text-danger">{error}</p>}

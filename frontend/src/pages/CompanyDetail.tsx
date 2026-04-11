@@ -5,6 +5,9 @@ import {
   fetchReports,
   fetchCompanyAnalyses,
   deleteCompany,
+  deleteReport,
+  redownloadReport,
+  analyzeReport,
   analyzeAll,
 } from "../api/client";
 import ReportTable from "../components/ReportTable";
@@ -30,6 +33,13 @@ export default function CompanyDetail() {
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [tab, setTab] = useState<TabKey>("reports");
   const [showDownload, setShowDownload] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
+
+  const showToast = (msg: string, type: "ok" | "err" = "ok") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   const load = async () => {
     const [companies, reps, anals] = await Promise.all([
@@ -61,7 +71,7 @@ export default function CompanyDetail() {
   return (
     <div>
       {/* Breadcrumb + Header */}
-      <div className="mb-6">
+      <div className="no-print mb-6">
         <Link
           to="/"
           className="no-print text-sm text-text-tertiary hover:text-accent"
@@ -90,14 +100,22 @@ export default function CompanyDetail() {
               보고서 다운로드
             </button>
             <button
+              disabled={analyzing}
               onClick={async () => {
-                const result = await analyzeAll(companyId);
-                alert(result.message);
-                load();
+                setAnalyzing(true);
+                try {
+                  const result = await analyzeAll(companyId);
+                  showToast(result.message);
+                  load();
+                } catch (e: any) {
+                  showToast(e.message, "err");
+                } finally {
+                  setAnalyzing(false);
+                }
               }}
-              className="rounded-lg border border-accent px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/5"
+              className="rounded-lg border border-accent px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/5 disabled:opacity-50"
             >
-              전체 분석
+              {analyzing ? "요청 중..." : "전체 분석"}
             </button>
             <button
               onClick={handleDelete}
@@ -108,6 +126,20 @@ export default function CompanyDetail() {
           </div>
         </div>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className={`no-print mb-4 flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium ${
+            toast.type === "ok"
+              ? "bg-success-bg text-success"
+              : "bg-danger-bg text-danger"
+          }`}
+        >
+          <span>{toast.type === "ok" ? "✓" : "✕"}</span>
+          {toast.msg}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="no-print mb-6 border-b border-border">
@@ -132,8 +164,45 @@ export default function CompanyDetail() {
       {tab === "reports" && (
         <ReportTable
           reports={reports}
-          onAnalyze={(_reportId) => {
-            setTab("subsidiary");
+          analyzing={analyzing}
+          onAnalyze={async (reportId) => {
+            setAnalyzing(true);
+            try {
+              const result = await analyzeReport(reportId);
+              showToast(result.message);
+              load();
+              setTab("subsidiary");
+            } catch (e: any) {
+              showToast(e.message, "err");
+            } finally {
+              setAnalyzing(false);
+            }
+          }}
+          onDelete={async (reportId) => {
+            const report = reports.find((r) => r.id === reportId);
+            if (!confirm(`"${report?.report_name}" 보고서를 삭제하시겠습니까?\n관련 분석 데이터도 함께 삭제됩니다.`)) return;
+            try {
+              await deleteReport(reportId);
+              showToast("보고서가 삭제되었습니다.");
+              load();
+            } catch (e: any) {
+              showToast(e.message, "err");
+            }
+          }}
+          onRedownload={async (reportId) => {
+            const report = reports.find((r) => r.id === reportId);
+            if (report && report.analysis_count > 0) {
+              if (!confirm(
+                `"${report.report_name}"\n\n이 보고서에 분석 결과 ${report.analysis_count}건이 있습니다.\n재다운로드하면 기존 분석 결과가 모두 삭제됩니다.\n계속하시겠습니까?`
+              )) return;
+            }
+            try {
+              await redownloadReport(reportId);
+              showToast("보고서 파일을 재다운로드했습니다. 기존 분석 결과가 삭제되었습니다.");
+              load();
+            } catch (e: any) {
+              showToast(e.message, "err");
+            }
           }}
         />
       )}
