@@ -11,13 +11,42 @@ VALID_TYPES = ("subsidiary", "rnd", "national_tech")
 router = APIRouter(tags=["analyses"])
 
 
+def _get_or_create_analysis(
+    db: Session, company_id: int, report_id: int, analysis_type: str
+) -> Analysis:
+    """분석 레코드를 가져오거나 새로 생성. 실패/완료 상태면 pending으로 리셋."""
+    existing = db.query(Analysis).filter_by(
+        company_id=company_id,
+        report_id=report_id,
+        analysis_type=analysis_type,
+    ).first()
+
+    if existing:
+        existing.status = "pending"
+        existing.error_message = None
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    analysis = Analysis(
+        company_id=company_id,
+        report_id=report_id,
+        analysis_type=analysis_type,
+        status="pending",
+    )
+    db.add(analysis)
+    db.commit()
+    db.refresh(analysis)
+    return analysis
+
+
 @router.post("/api/reports/{report_id}/analyze", response_model=AnalysisResponse)
 def analyze_report(
     report_id: int,
     body: AnalysisRequest,
     db: Session = Depends(get_db),
 ):
-    """분석 요청을 큐에 추가하고 즉시 반환. 백그라운드에서 처리됨."""
+    """특정 분석 유형 1개를 요청. 큐에 report_id를 투입해 combined worker가 처리."""
     report = db.query(Report).get(report_id)
     if not report:
         raise HTTPException(404, "보고서를 찾을 수 없습니다.")
@@ -26,37 +55,32 @@ def analyze_report(
     if body.analysis_type not in VALID_TYPES:
         raise HTTPException(400, f"지원하지 않는 분석 유형: {body.analysis_type}")
 
-    # 기존 분석이 있으면 재사용 (status를 pending으로 리셋)
-    existing = db.query(Analysis).filter_by(
-        company_id=report.company_id,
-        report_id=report.id,
-        analysis_type=body.analysis_type,
-    ).first()
-
-    if existing:
-        existing.status = "pending"
-        existing.error_message = None
-        db.commit()
-        db.refresh(existing)
-        enqueue(existing.id)
-        return AnalysisResponse.model_validate(existing)
-
-    analysis = Analysis(
-        company_id=report.company_id,
-        report_id=report.id,
-        analysis_type=body.analysis_type,
-        status="pending",
+    analysis = _get_or_create_analysis(
+        db, report.company_id, report.id, body.analysis_type
     )
-    db.add(analysis)
-    db.commit()
-    db.refresh(analysis)
-    enqueue(analysis.id)
+    enqueue(report.id)  # report_id 기반 큐 — worker가 pending 항목 일괄 처리
     return AnalysisResponse.model_validate(analysis)
+
+
+@router.post("/api/reports/{report_id}/analyze-all")
+def analyze_report_all(report_id: int, db: Session = Depends(get_db)):
+    """보고서의 모든 분석 유형(3종)을 pending으로 설정하고 report_id를 큐에 1회 투입."""
+    report = db.query(Report).get(report_id)
+    if not report:
+        raise HTTPException(404, "보고서를 찾을 수 없습니다.")
+    if not report.file_path:
+        raise HTTPException(400, "보고서 파일이 아직 다운로드되지 않았습니다.")
+
+    for atype in VALID_TYPES:
+        _get_or_create_analysis(db, report.company_id, report.id, atype)
+
+    enqueue(report.id)  # 중복 투입은 enqueue 내부에서 무시
+    return {"message": "3가지 분석이 큐에 추가되었습니다. (Gemini 1회 호출)", "queued": 3}
 
 
 @router.post("/api/companies/{company_id}/analyze-all")
 def analyze_all(company_id: int, db: Session = Depends(get_db)):
-    """해당 기업의 모든 보고서 × 모든 분석 유형을 일괄 큐에 추가."""
+    """기업의 모든 보고서 × 3가지 유형을 일괄 요청. 보고서별로 1회씩 큐 투입."""
     company = db.query(Company).get(company_id)
     if not company:
         raise HTTPException(404, "기업을 찾을 수 없습니다.")
@@ -66,37 +90,28 @@ def analyze_all(company_id: int, db: Session = Depends(get_db)):
         Report.file_path.isnot(None),
     ).all()
 
-    queued = 0
+    queued_reports = 0
     for report in reports:
+        has_pending = False
         for atype in VALID_TYPES:
             existing = db.query(Analysis).filter_by(
                 company_id=company_id,
                 report_id=report.id,
                 analysis_type=atype,
             ).first()
-
             if existing and existing.status == "completed":
-                continue  # 이미 완료된 건 건너뜀
+                continue
+            _get_or_create_analysis(db, company_id, report.id, atype)
+            has_pending = True
 
-            if existing:
-                existing.status = "pending"
-                existing.error_message = None
-                db.commit()
-                enqueue(existing.id)
-            else:
-                analysis = Analysis(
-                    company_id=company_id,
-                    report_id=report.id,
-                    analysis_type=atype,
-                    status="pending",
-                )
-                db.add(analysis)
-                db.commit()
-                db.refresh(analysis)
-                enqueue(analysis.id)
-            queued += 1
+        if has_pending:
+            enqueue(report.id)
+            queued_reports += 1
 
-    return {"message": f"{queued}건의 분석이 큐에 추가되었습니다.", "queued": queued}
+    return {
+        "message": f"{queued_reports}개 보고서 분석이 큐에 추가되었습니다. (보고서당 Gemini 1회 호출)",
+        "queued": queued_reports,
+    }
 
 
 @router.get("/api/reports/{report_id}/analyses", response_model=list[AnalysisResponse])

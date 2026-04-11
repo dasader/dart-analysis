@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     backend_port: int = 8016
     frontend_port: int = 8097
     scheduler_interval_hours: int = 24
+    # Gemini 2.5 flash preview TPM 한도: 2M tokens/min
+    # 요청당 ~850K 토큰 기준 → 분당 2건 → 30초 간격
+    analysis_interval_secs: int = 30
     data_dir: Path = Path("/app/data")
 
     @property
@@ -18,7 +21,11 @@ class Settings(BaseSettings):
     def reports_dir(self) -> Path:
         return self.data_dir / "reports"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": [".env", "../.env"],
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 settings = Settings()

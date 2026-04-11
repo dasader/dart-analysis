@@ -1,26 +1,56 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 *.egg-info/
+*.egg
 .venv/
+venv/
+.Python
 
 # Node
 node_modules/
 dist/
+dist-ssr/
+*.local
 
-# Data
+# Data (보고서 파일 및 DB)
 data/
+*.sqlite3
+*.db
 
 # Environment
 .env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
 
 # IDE
 .vscode/
+!.vscode/extensions.json
 .idea/
-
-# Superpowers
-.superpowers/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Superpowers
+.superpowers/
+
+# 임시 파일
+*.tmp
+*.bak
+tmp/

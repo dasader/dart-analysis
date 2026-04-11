@@ -1,6 +1,10 @@
-from datetime import datetime
+import re
+import urllib.parse
+from datetime import datetime, date
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -61,8 +65,13 @@ async def download_reports(
             downloaded.append(existing)
             continue
 
-        filing = dr.get("filing_date")
-        fiscal_year = int(filing[:4]) if filing else (body.fiscal_year or 2024)
+        filing_str = dr.get("filing_date")
+        fiscal_year = int(filing_str[:4]) if filing_str else (body.fiscal_year or 2024)
+        filing_date = (
+            date(int(filing_str[:4]), int(filing_str[4:6]), int(filing_str[6:8]))
+            if filing_str
+            else None
+        )
 
         file_path = await download_and_extract(company.corp_code, dr["rcept_no"], fiscal_year)
 
@@ -72,7 +81,7 @@ async def download_reports(
             report_name=dr["report_name"],
             report_type=dr["report_type"],
             fiscal_year=fiscal_year,
-            filing_date=filing,
+            filing_date=filing_date,
             file_path=file_path,
             downloaded_at=datetime.utcnow(),
         )
@@ -98,6 +107,65 @@ async def check_new_reports(company_id: int, db: Session = Depends(get_db)):
 
     new_reports = [r for r in dart_reports if r["rcept_no"] not in existing_rcepts]
     return {"new_count": len(new_reports), "reports": new_reports}
+
+
+@router.delete("/api/reports/{report_id}", status_code=204)
+def delete_report(report_id: int, db: Session = Depends(get_db)):
+    report = db.query(Report).get(report_id)
+    if not report:
+        raise HTTPException(404, "보고서를 찾을 수 없습니다.")
+    db.delete(report)
+    db.commit()
+
+
+@router.post("/api/reports/{report_id}/redownload", response_model=ReportResponse)
+async def redownload_report(report_id: int, db: Session = Depends(get_db)):
+    report = db.query(Report).get(report_id)
+    if not report:
+        raise HTTPException(404, "보고서를 찾을 수 없습니다.")
+
+    # 파일이 바뀌므로 기존 분석 결과 삭제
+    db.query(Analysis).filter(Analysis.report_id == report_id).delete()
+
+    file_path = await download_and_extract(
+        report.company.corp_code, report.rcept_no, report.fiscal_year
+    )
+    report.file_path = file_path
+    report.downloaded_at = datetime.utcnow()
+    db.commit()
+    db.refresh(report)
+
+    resp = ReportResponse.model_validate(report)
+    resp.analysis_count = 0
+    return resp
+
+
+@router.get("/api/reports/{report_id}/download")
+def download_report_zip(report_id: int, db: Session = Depends(get_db)):
+    """저장된 보고서 ZIP 파일을 다운로드. 파일명: 회사명_연도_보고서유형.zip"""
+    report = db.query(Report).get(report_id)
+    if not report:
+        raise HTTPException(404, "보고서를 찾을 수 없습니다.")
+    if not report.file_path:
+        raise HTTPException(404, "보고서 파일이 아직 다운로드되지 않았습니다.")
+
+    zip_path = Path(report.file_path) / f"{report.rcept_no}.zip"
+    if not zip_path.exists():
+        raise HTTPException(404, "ZIP 파일을 찾을 수 없습니다.")
+
+    corp_name = report.company.corp_name
+    raw_name = f"{corp_name}_{report.fiscal_year}_{report.report_type}.zip"
+    # 파일명에 사용 불가한 문자 제거
+    safe_name = re.sub(r'[\\/:*?"<>|]', "_", raw_name)
+    encoded_name = urllib.parse.quote(safe_name, encoding="utf-8")
+
+    return FileResponse(
+        path=str(zip_path),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"
+        },
+    )
 
 
 @router.get("/api/reports/{report_id}/content")
