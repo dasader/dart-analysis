@@ -6,7 +6,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Company
-from app.services.dart_client import list_reports
+from app.services.dart_client import list_reports, extract_fiscal_year_from_name
 from app.services.report_service import download_and_extract
 from app.models import Report
 
@@ -50,7 +50,11 @@ async def check_and_download_reports():
                         continue
 
                     filing_str = dr.get("filing_date")
-                    fiscal_year = int(filing_str[:4]) if filing_str else max_year + 1
+                    # 보고서명에서 사업연도 추출, 없으면 max_year+1 사용
+                    fiscal_year = (
+                        extract_fiscal_year_from_name(dr["report_name"])
+                        or (int(filing_str[:4]) if filing_str else max_year + 1)
+                    )
                     filing_date = (
                         date(int(filing_str[:4]), int(filing_str[4:6]), int(filing_str[6:8]))
                         if filing_str
