@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Company, Report, Analysis
 from app.schemas import ReportResponse, ReportDownloadRequest
-from app.services.dart_client import list_reports
+from app.services.dart_client import list_reports, extract_fiscal_year_from_name
 from app.services.report_service import download_and_extract, extract_text_from_report
 
 router = APIRouter(tags=["reports"])
@@ -56,6 +56,13 @@ async def download_reports(
     if body.report_type:
         dart_reports = [r for r in dart_reports if r["report_type"] == body.report_type]
 
+    # 보고서명에서 사업연도 파싱 후 선택 연도와 일치하는 것만 수집
+    if body.fiscal_year:
+        dart_reports = [
+            r for r in dart_reports
+            if extract_fiscal_year_from_name(r["report_name"]) == body.fiscal_year
+        ]
+
     downloaded = []
     for dr in dart_reports:
         existing = db.query(Report).filter_by(
@@ -66,7 +73,8 @@ async def download_reports(
             continue
 
         filing_str = dr.get("filing_date")
-        fiscal_year = int(filing_str[:4]) if filing_str else (body.fiscal_year or 2024)
+        # 보고서명에서 사업연도 추출, 없으면 선택 연도 사용
+        fiscal_year = extract_fiscal_year_from_name(dr["report_name"]) or body.fiscal_year or 2024
         filing_date = (
             date(int(filing_str[:4]), int(filing_str[4:6]), int(filing_str[6:8]))
             if filing_str

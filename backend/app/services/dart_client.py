@@ -1,4 +1,5 @@
 import io
+import re
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -96,6 +97,16 @@ def _classify_report(name: str) -> str | None:
     if "사업보고서" in name:
         return "사업보고서"
     return None
+
+
+def extract_fiscal_year_from_name(report_name: str) -> int | None:
+    """보고서명에서 사업연도 추출.
+
+    '2025년도 사업보고서' → 2025
+    '제60기 사업보고서' 등 연도가 없는 경우 → None
+    """
+    m = re.search(r"(\d{4})년", report_name)
+    return int(m.group(1)) if m else None
 
 
 async def download_document(rcept_no: str) -> bytes:
