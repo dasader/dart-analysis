@@ -69,6 +69,12 @@ async def download_reports(
             company_id=company_id, rcept_no=dr["rcept_no"]
         ).first()
         if existing:
+            # 이전 버그로 잘못 저장된 fiscal_year를 보고서명 기준으로 교정
+            parsed_year = extract_fiscal_year_from_name(dr["report_name"])
+            if parsed_year and existing.fiscal_year != parsed_year:
+                existing.fiscal_year = parsed_year
+                db.commit()
+                db.refresh(existing)
             downloaded.append(existing)
             continue
 
