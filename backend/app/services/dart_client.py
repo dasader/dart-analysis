@@ -102,11 +102,19 @@ def _classify_report(name: str) -> str | None:
 def extract_fiscal_year_from_name(report_name: str) -> int | None:
     """보고서명에서 사업연도 추출.
 
-    '2025년도 사업보고서' → 2025
-    '제60기 사업보고서' 등 연도가 없는 경우 → None
+    '2025년도 사업보고서'       → 2025  (년 패턴)
+    '사업보고서 (2025.12)'      → 2025  (YYYY.MM 패턴)
+    '제60기 사업보고서'          → None  (연도 정보 없음)
     """
+    # 우선순위 1: YYYY년 패턴
     m = re.search(r"(\d{4})년", report_name)
-    return int(m.group(1)) if m else None
+    if m:
+        return int(m.group(1))
+    # 우선순위 2: (YYYY.MM) 패턴 — "사업보고서 (2025.12)" 형식
+    m = re.search(r"\((\d{4})\.\d{2}\)", report_name)
+    if m:
+        return int(m.group(1))
+    return None
 
 
 async def download_document(rcept_no: str) -> bytes:
