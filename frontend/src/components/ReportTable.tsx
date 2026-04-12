@@ -120,17 +120,17 @@ export default function ReportTable({ reports, analyzing = false, onAnalyze, onD
                     {r.filing_date || "—"}
                   </td>
                   <td className="px-5 py-3.5 text-center">
-                    <span
-                      className={`font-mono text-xs ${
-                        r.analysis_count >= ANALYSIS_TYPES.length
-                          ? "text-success"
-                          : r.analysis_count > 0
-                            ? "text-warning"
-                            : "text-text-tertiary"
-                      }`}
-                    >
-                      {r.analysis_count}/{ANALYSIS_TYPES.length}
-                    </span>
+                    {r.analysis_count >= ANALYSIS_TYPES.length ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-success">
+                        <span>●</span> 완료
+                      </span>
+                    ) : r.analysis_count > 0 ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-warning">
+                        <span>◐</span> 일부
+                      </span>
+                    ) : (
+                      <span className="text-xs text-text-tertiary">—</span>
+                    )}
                   </td>
                   <td className="px-5 py-3.5 text-right">
                     <div className="flex items-center justify-end gap-3">
@@ -145,7 +145,7 @@ export default function ReportTable({ reports, analyzing = false, onAnalyze, onD
                         <button
                           disabled={analyzing || busyId === r.id}
                           onClick={() => onAnalyze(r.id)}
-                          className="text-sm text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+                          className="btn btn-link"
                         >
                           {analyzing ? "요청 중..." : "분석"}
                         </button>
@@ -157,7 +157,7 @@ export default function ReportTable({ reports, analyzing = false, onAnalyze, onD
                           try { await onRedownload(r.id); }
                           finally { setBusyId(null); }
                         }}
-                        className="text-sm text-text-secondary hover:text-text-primary disabled:opacity-40"
+                        className="btn btn-text"
                         title="파일 재다운로드"
                       >
                         {busyId === r.id ? "..." : "재다운로드"}
@@ -165,7 +165,7 @@ export default function ReportTable({ reports, analyzing = false, onAnalyze, onD
                       <button
                         disabled={busyId === r.id}
                         onClick={() => onDelete(r.id)}
-                        className="text-sm text-danger/70 hover:text-danger disabled:opacity-40"
+                        className="btn btn-text-danger"
                       >
                         삭제
                       </button>

@@ -166,7 +166,7 @@ export default function AnalysisView({
               <button
                 disabled={runningId === selectedReport.id}
                 onClick={() => handleRun(selectedReport.id, true)}
-                className="rounded-lg border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-background disabled:opacity-50"
+                className="btn btn-outline btn-sm"
                 title="3가지 분석 항목을 Gemini 1회 호출로 일괄 재분석"
               >
                 {runningId === selectedReport.id ? "요청 중..." : "전체 재분석"}
@@ -175,7 +175,7 @@ export default function AnalysisView({
             {printAnalyses.length > 0 && (
               <button
                 onClick={() => window.print()}
-                className="rounded-lg border border-border px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-background"
+                className="btn btn-outline btn-sm"
                 title={`${selectedYear}년 분석 결과 ${printAnalyses.length}건 PDF 출력`}
               >
                 PDF 출력
@@ -198,11 +198,7 @@ export default function AnalysisView({
                 <button
                   key={y}
                   onClick={() => setSelectedYear(y)}
-                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    selectedYear === y
-                      ? "bg-navy text-white"
-                      : "border border-border bg-surface text-text-secondary hover:bg-background"
-                  }`}
+                  className={selectedYear === y ? "chip chip-active" : "chip"}
                 >
                   {y}
                   {statusInfo && yearAnalysis?.status !== "completed" && (
@@ -255,7 +251,7 @@ export default function AnalysisView({
             </p>
             <button
               onClick={() => handleRun(selectedAnalysis.report_id)}
-              className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
+              className="btn btn-action mt-4"
             >
               재시도
             </button>
@@ -273,7 +269,7 @@ export default function AnalysisView({
                       key={r.id}
                       disabled={runningId === r.id}
                       onClick={() => handleRun(r.id)}
-                      className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-light disabled:opacity-50"
+                      className="btn btn-action"
                     >
                       {runningId === r.id ? "요청 중..." : `${r.fiscal_year} ${r.report_type} 분석`}
                     </button>

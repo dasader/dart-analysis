@@ -41,7 +41,7 @@ export default function CompanyEditModal({ company, onClose, onUpdated }: Props)
       <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-xl">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">기업 정보 수정</h2>
-          <button onClick={onClose} className="text-text-tertiary hover:text-text-primary">✕</button>
+          <button onClick={onClose} className="btn-close">✕</button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -90,14 +90,14 @@ export default function CompanyEditModal({ company, onClose, onUpdated }: Props)
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-border px-4 py-2 text-sm text-text-secondary hover:bg-background"
+              className="btn btn-outline"
             >
               취소
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-light disabled:opacity-50"
+              className="btn btn-primary"
             >
               {loading ? "저장 중..." : "저장"}
             </button>

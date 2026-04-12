@@ -42,7 +42,7 @@ export default function CompanyForm({ open, onClose, onCreated }: Props) {
           </h2>
           <button
             onClick={onClose}
-            className="text-text-tertiary transition-colors hover:text-text-primary"
+            className="btn-close"
           >
             ✕
           </button>

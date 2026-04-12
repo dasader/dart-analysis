@@ -44,7 +44,7 @@ export default function DownloadModal({
           </h2>
           <button
             onClick={onClose}
-            className="text-text-tertiary transition-colors hover:text-text-primary"
+            className="btn-close"
           >
             ✕
           </button>
@@ -87,7 +87,7 @@ export default function DownloadModal({
           <button
             onClick={handleDownload}
             disabled={loading}
-            className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-light disabled:opacity-50"
+            className="btn btn-primary w-full"
           >
             {loading ? "다운로드 중..." : "다운로드 시작"}
           </button>

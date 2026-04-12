@@ -95,7 +95,7 @@ export default function CompanyDetail() {
           <div className="no-print flex gap-2">
             <button
               onClick={() => setShowDownload(true)}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-light"
+              className="btn btn-primary"
             >
               보고서 다운로드
             </button>
@@ -113,13 +113,13 @@ export default function CompanyDetail() {
                   setAnalyzing(false);
                 }
               }}
-              className="rounded-lg border border-accent px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/5 disabled:opacity-50"
+              className="btn btn-ghost-accent"
             >
               {analyzing ? "요청 중..." : "전체 분석"}
             </button>
             <button
               onClick={handleDelete}
-              className="rounded-lg border border-danger/30 px-3 py-2 text-sm text-danger transition-colors hover:bg-danger-bg"
+              className="btn btn-danger"
             >
               삭제
             </button>

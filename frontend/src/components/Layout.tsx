@@ -12,7 +12,7 @@ export default function Layout() {
   }, [location.pathname]);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       {/* Top Navigation */}
       <header className="no-print sticky top-0 z-50 border-b border-border bg-navy text-white shadow-sm">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
@@ -41,7 +41,7 @@ export default function Layout() {
             )}
             <Link
               to="/settings/prompts"
-              className="text-sm text-white/60 transition-colors hover:text-white"
+              className="nav-link"
             >
               설정
             </Link>
@@ -50,9 +50,21 @@ export default function Layout() {
       </header>
 
       {/* Main Content */}
-      <main className="mx-auto max-w-7xl px-6 py-8">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
         <Outlet />
       </main>
+
+      {/* Footer */}
+      <footer className="no-print mt-4 border-t border-border">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <span className="text-xs font-medium text-text-tertiary">
+            DART 기업 사업보고서 분석
+          </span>
+          <span className="font-mono text-xs text-text-tertiary">
+            v{__APP_VERSION__}
+          </span>
+        </div>
+      </footer>
     </div>
   );
 }

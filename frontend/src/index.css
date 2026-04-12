@@ -182,3 +182,259 @@ body {
 .print-only {
   display: none;
 }
+
+/* ================================================================
+   BUTTON DESIGN SYSTEM — Precision Finance
+   ================================================================ */
+
+/* ── Base ── */
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid transparent;
+  text-decoration: none;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.12s ease,
+    color 0.15s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  outline: none;
+  vertical-align: middle;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+/* ── Size modifier ── */
+.btn-sm {
+  padding: 0.3125rem 0.6875rem;
+  font-size: 0.75rem;
+  border-radius: 0.375rem;
+  letter-spacing: 0.015em;
+}
+
+/* ── Primary: Navy filled — main CTA ── */
+.btn-primary {
+  background-color: var(--color-navy);
+  color: #fff;
+  border-color: transparent;
+  box-shadow:
+    0 1px 2px rgba(27, 42, 74, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--color-navy-light);
+  box-shadow:
+    0 4px 10px rgba(27, 42, 74, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  transform: translateY(-1px);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(27, 42, 74, 0.18);
+}
+
+/* ── Action: Accent blue — analysis / download ── */
+.btn-action {
+  background-color: var(--color-accent);
+  color: #fff;
+  border-color: transparent;
+  box-shadow:
+    0 1px 2px rgba(37, 99, 235, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+.btn-action:hover:not(:disabled) {
+  background-color: var(--color-accent-light);
+  box-shadow:
+    0 4px 10px rgba(37, 99, 235, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  transform: translateY(-1px);
+}
+.btn-action:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.18);
+}
+
+/* ── Outline: Neutral secondary ── */
+.btn-outline {
+  background-color: var(--color-surface);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border-dark);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.btn-outline:hover:not(:disabled) {
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-tertiary);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.07);
+}
+
+/* ── Ghost accent: accent-bordered, paired with primary ── */
+.btn-ghost-accent {
+  background-color: rgba(37, 99, 235, 0.04);
+  color: var(--color-accent);
+  border-color: rgba(37, 99, 235, 0.28);
+}
+.btn-ghost-accent:hover:not(:disabled) {
+  background-color: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.48);
+}
+
+/* ── Danger: destructive ── */
+.btn-danger {
+  background-color: rgba(220, 38, 38, 0.05);
+  color: var(--color-danger);
+  border-color: rgba(220, 38, 38, 0.2);
+}
+.btn-danger:hover:not(:disabled) {
+  background-color: var(--color-danger-bg);
+  border-color: rgba(220, 38, 38, 0.38);
+}
+
+/* ── Text link: accent + sliding underline ── */
+.btn-link {
+  background: none;
+  border-color: transparent;
+  color: var(--color-accent);
+  padding: 0;
+  font-weight: 400;
+  letter-spacing: 0;
+  border-radius: 0;
+  position: relative;
+}
+.btn-link::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background-color: var(--color-accent);
+  transition: width 0.18s ease;
+}
+.btn-link:hover:not(:disabled) {
+  color: var(--color-accent-light);
+}
+.btn-link:hover:not(:disabled)::after {
+  width: 100%;
+}
+
+/* ── Text muted: gray → primary ── */
+.btn-text {
+  background: none;
+  border-color: transparent;
+  color: var(--color-text-secondary);
+  padding: 0;
+  font-weight: 400;
+  letter-spacing: 0;
+  border-radius: 0;
+}
+.btn-text:hover:not(:disabled) {
+  color: var(--color-text-primary);
+}
+
+/* ── Text danger: muted red → full red ── */
+.btn-text-danger {
+  background: none;
+  border-color: transparent;
+  color: rgba(220, 38, 38, 0.58);
+  padding: 0;
+  font-weight: 400;
+  letter-spacing: 0;
+  border-radius: 0;
+}
+.btn-text-danger:hover:not(:disabled) {
+  color: var(--color-danger);
+}
+
+/* ── Close button (modal ✕) ── */
+.btn-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border-radius: 0.375rem;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.btn-close:hover {
+  background-color: var(--color-background);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+/* ── Year chip ── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: 1px solid var(--color-border-dark);
+  background-color: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.chip:hover {
+  background-color: var(--color-background);
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text-primary);
+}
+.chip-active {
+  background-color: var(--color-navy);
+  color: #fff;
+  border-color: var(--color-navy);
+  box-shadow: 0 2px 6px rgba(27, 42, 74, 0.2);
+}
+.chip-active:hover {
+  background-color: var(--color-navy-light);
+  border-color: var(--color-navy-light);
+}
+
+/* ── Nav link (header) ── */
+.nav-link {
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.01em;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  text-decoration: none;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.nav-link:hover {
+  color: rgba(255, 255, 255, 0.95);
+  background-color: rgba(255, 255, 255, 0.07);
+}

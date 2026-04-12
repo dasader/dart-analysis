@@ -102,7 +102,7 @@ export default function CompanyList() {
         </div>
         <button
           onClick={() => setShowForm(true)}
-          className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-accent-light hover:shadow-md"
+          className="btn btn-primary"
         >
           + 기업 등록
         </button>
@@ -208,13 +208,13 @@ export default function CompanyList() {
                       </Link>
                       <button
                         onClick={() => setEditTarget(c)}
-                        className="text-text-secondary hover:text-text-primary"
+                        className="btn btn-text"
                       >
                         수정
                       </button>
                       <button
                         onClick={() => handleDelete(c)}
-                        className="text-danger/70 hover:text-danger"
+                        className="btn btn-text-danger"
                       >
                         삭제
                       </button>
