@@ -148,10 +148,10 @@ Thumbs.db
 
 ```env
 # OpenDART
-OPENDART_API_KEY=ccda2b87cdf11055b37dda35c0b5dcb5a91babc9
+OPENDART_API_KEY=your_opendart_api_key_here
 
 # Gemini
-GEMINI_API_KEY=AIzaSyAujeINgg3_joF-2-e11LpffQzCqLHvVPo
+GEMINI_API_KEY=your_gemini_api_key_here
 
 # Ports
 BACKEND_PORT=8016
