@@ -39,6 +39,9 @@ export default function Layout() {
                 </span>
               </div>
             )}
+            <Link to="/tags" className="nav-link">
+              태그 관리
+            </Link>
             <Link
               to="/settings/prompts"
               className="nav-link"
