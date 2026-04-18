@@ -55,7 +55,7 @@ def create_company(body: CompanyCreate, db: Session = Depends(get_db)):
     db.add(company)
     db.commit()
     db.refresh(company)
-    return CompanyResponse.model_validate(company)
+    return _build_company_response(db, company)
 
 
 @router.put("/{company_id}", response_model=CompanyResponse)
@@ -67,7 +67,7 @@ def update_company(company_id: int, body: CompanyUpdate, db: Session = Depends(g
         setattr(company, key, val)
     db.commit()
     db.refresh(company)
-    return CompanyResponse.model_validate(company)
+    return _build_company_response(db, company)
 
 
 @router.delete("/{company_id}", status_code=204)

@@ -50,8 +50,12 @@ export default function TagSettings() {
 
   const handleDelete = async (tag: Tag) => {
     if (!confirm(`"${tag.name}" 태그를 삭제하시겠습니까?\n기업에서 할당된 태그도 해제됩니다.`)) return;
-    await deleteTag(tag.id);
-    load();
+    try {
+      await deleteTag(tag.id);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
   };
 
   return (
