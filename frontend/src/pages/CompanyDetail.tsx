@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   fetchCompanies,
   fetchReports,
   fetchCompanyAnalyses,
+  fetchTags,
+  assignTag,
+  removeCompanyTag,
   deleteCompany,
   deleteReport,
   redownloadReport,
@@ -13,7 +16,7 @@ import {
 import ReportTable from "../components/ReportTable";
 import DownloadModal from "../components/DownloadModal";
 import AnalysisView from "../components/AnalysisView";
-import type { Company, Report, Analysis } from "../types";
+import type { Company, Report, Analysis, Tag } from "../types";
 
 const TABS = [
   { key: "reports", label: "보고서" },
@@ -35,6 +38,9 @@ export default function CompanyDetail() {
   const [showDownload, setShowDownload] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const tagDropdownRef = useRef<HTMLDivElement>(null);
 
   const showToast = (msg: string, type: "ok" | "err" = "ok") => {
     setToast({ msg, type });
@@ -42,24 +48,55 @@ export default function CompanyDetail() {
   };
 
   const load = async () => {
-    const [companies, reps, anals] = await Promise.all([
+    const [companies, reps, anals, tags] = await Promise.all([
       fetchCompanies(),
       fetchReports(companyId),
       fetchCompanyAnalyses(companyId),
+      fetchTags(),
     ]);
     setCompany(companies.find((c) => c.id === companyId) || null);
     setReports(reps);
     setAnalyses(anals);
+    setAllTags(tags);
   };
 
   useEffect(() => {
     load();
   }, [companyId]);
 
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target as Node)) {
+        setShowTagDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
   const handleDelete = async () => {
     if (!confirm("이 기업과 관련 데이터를 모두 삭제하시겠습니까?")) return;
     await deleteCompany(companyId);
     window.location.href = "/";
+  };
+
+  const handleAssignTag = async (tagId: number) => {
+    try {
+      const updated = await assignTag(companyId, tagId);
+      setCompany(updated);
+      setShowTagDropdown(false);
+    } catch (e: any) {
+      showToast(e.message, "err");
+    }
+  };
+
+  const handleRemoveTag = async (tagId: number) => {
+    try {
+      const updated = await removeCompanyTag(companyId, tagId);
+      setCompany(updated);
+    } catch (e: any) {
+      showToast(e.message, "err");
+    }
   };
 
   if (!company) {
@@ -90,6 +127,62 @@ export default function CompanyDetail() {
               <span className="font-mono text-text-tertiary">
                 DART: {company.corp_code}
               </span>
+            </div>
+            {/* 태그 인라인 UI */}
+            <div className="no-print mt-2 flex flex-wrap items-center gap-1.5">
+              {company.tags.map((tag) => (
+                <span
+                  key={tag.id}
+                  style={{
+                    backgroundColor: tag.color + "20",
+                    color: tag.color,
+                    border: `1px solid ${tag.color}40`,
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium"
+                >
+                  {tag.name}
+                  <button
+                    onClick={() => handleRemoveTag(tag.id)}
+                    className="ml-0.5 opacity-60 hover:opacity-100"
+                    title="태그 제거"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <div ref={tagDropdownRef} className="relative">
+                <button
+                  onClick={() => setShowTagDropdown((v) => !v)}
+                  className="rounded-full border border-dashed border-border px-2.5 py-0.5 text-xs text-text-tertiary hover:border-accent hover:text-accent"
+                >
+                  + 태그
+                </button>
+                {showTagDropdown && (
+                  <div className="absolute left-0 top-full z-20 mt-1 min-w-36 rounded-lg border border-border bg-surface shadow-lg">
+                    {allTags.filter((t) => !company.tags.some((ct) => ct.id === t.id)).length === 0 ? (
+                      <p className="px-3 py-2.5 text-xs text-text-tertiary">
+                        할당 가능한 태그가 없습니다.
+                      </p>
+                    ) : (
+                      allTags
+                        .filter((t) => !company.tags.some((ct) => ct.id === t.id))
+                        .map((tag) => (
+                          <button
+                            key={tag.id}
+                            onClick={() => handleAssignTag(tag.id)}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-background/60"
+                          >
+                            <span
+                              style={{ backgroundColor: tag.color }}
+                              className="inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
+                            />
+                            {tag.name}
+                          </button>
+                        ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="no-print flex gap-2">
