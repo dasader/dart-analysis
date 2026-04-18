@@ -1,11 +1,19 @@
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Date, Text,
-    ForeignKey, UniqueConstraint,
+    ForeignKey, UniqueConstraint, Table,
 )
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+
+# 기업-태그 M2M 조인 테이블 (Company 클래스보다 먼저 정의)
+company_tags = Table(
+    "company_tags",
+    Base.metadata,
+    Column("company_id", Integer, ForeignKey("companies.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 class Company(Base):
@@ -21,6 +29,7 @@ class Company(Base):
 
     reports = relationship("Report", back_populates="company", cascade="all, delete-orphan")
     analyses = relationship("Analysis", back_populates="company", cascade="all, delete-orphan")
+    tags = relationship("Tag", secondary=company_tags, back_populates="companies")
 
 
 class Report(Base):
@@ -75,3 +84,14 @@ class PromptTemplate(Base):
     system_prompt = Column(Text, nullable=False)
     user_prompt_template = Column(Text, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, unique=True, nullable=False)
+    color = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    companies = relationship("Company", secondary=company_tags, back_populates="tags")
