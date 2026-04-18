@@ -1,3 +1,16 @@
+export interface Tag {
+  id: number;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
+export const TAG_COLORS = [
+  "#3B82F6", "#22C55E", "#EF4444", "#F97316",
+  "#A855F7", "#EC4899", "#06B6D4", "#EAB308",
+  "#6366F1", "#14B8A6", "#78716C", "#6B7280",
+] as const;
+
 export interface Company {
   id: number;
   corp_code: string;
@@ -8,6 +21,7 @@ export interface Company {
   updated_at: string;
   report_count: number;
   latest_analysis_date: string | null;
+  tags: Tag[];
 }
 
 export interface CompanySearchResult {

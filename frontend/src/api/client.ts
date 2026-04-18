@@ -5,6 +5,7 @@ import type {
   Analysis,
   SchedulerStatus,
   PromptTemplate,
+  Tag,
 } from "../types";
 
 const BASE = "/api";
@@ -24,8 +25,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 // --- Companies ---
 
-export function fetchCompanies(): Promise<Company[]> {
-  return request("/companies");
+export function fetchCompanies(tagIds?: number[]): Promise<Company[]> {
+  const qs = tagIds && tagIds.length > 0 ? `?tag_ids=${tagIds.join(",")}` : "";
+  return request(`/companies${qs}`);
 }
 
 export function searchCompanies(name: string): Promise<CompanySearchResult[]> {
@@ -164,4 +166,33 @@ export function updatePrompt(
     method: "PUT",
     body: JSON.stringify(body),
   });
+}
+
+// --- Tags ---
+
+export function fetchTags(): Promise<Tag[]> {
+  return request("/tags");
+}
+
+export function createTag(body: { name: string; color: string }): Promise<Tag> {
+  return request("/tags", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateTag(
+  id: number,
+  body: { name?: string; color?: string },
+): Promise<Tag> {
+  return request(`/tags/${id}`, { method: "PUT", body: JSON.stringify(body) });
+}
+
+export function deleteTag(id: number): Promise<void> {
+  return request(`/tags/${id}`, { method: "DELETE" });
+}
+
+export function assignTag(companyId: number, tagId: number): Promise<Company> {
+  return request(`/companies/${companyId}/tags/${tagId}`, { method: "POST" });
+}
+
+export function removeCompanyTag(companyId: number, tagId: number): Promise<Company> {
+  return request(`/companies/${companyId}/tags/${tagId}`, { method: "DELETE" });
 }
