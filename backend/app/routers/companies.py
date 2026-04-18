@@ -3,7 +3,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Company, Report, Analysis
+from app.models import Company, Report, Analysis, Tag
 from app.schemas import (
     CompanyCreate, CompanyUpdate, CompanyResponse, CompanySearchResult,
 )
@@ -12,22 +12,30 @@ from app.services.dart_client import search_companies
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
 
+def _build_company_response(db: Session, company: Company) -> CompanyResponse:
+    report_count = (
+        db.query(func.count(Report.id)).filter(Report.company_id == company.id).scalar()
+    )
+    latest = (
+        db.query(func.max(Analysis.updated_at))
+        .filter(Analysis.company_id == company.id, Analysis.status == "completed")
+        .scalar()
+    )
+    resp = CompanyResponse.model_validate(company)
+    resp.report_count = report_count
+    resp.latest_analysis_date = latest
+    return resp
+
+
 @router.get("", response_model=list[CompanyResponse])
-def list_companies(db: Session = Depends(get_db)):
-    companies = db.query(Company).order_by(Company.created_at.desc()).all()
-    results = []
-    for c in companies:
-        report_count = db.query(func.count(Report.id)).filter(Report.company_id == c.id).scalar()
-        latest = (
-            db.query(func.max(Analysis.updated_at))
-            .filter(Analysis.company_id == c.id, Analysis.status == "completed")
-            .scalar()
-        )
-        resp = CompanyResponse.model_validate(c)
-        resp.report_count = report_count
-        resp.latest_analysis_date = latest
-        results.append(resp)
-    return results
+def list_companies(tag_ids: str | None = None, db: Session = Depends(get_db)):
+    query = db.query(Company).order_by(Company.created_at.desc())
+    if tag_ids:
+        ids = [int(i) for i in tag_ids.split(",") if i.strip().isdigit()]
+        if ids:
+            query = query.filter(Company.tags.any(Tag.id.in_(ids)))
+    companies = query.all()
+    return [_build_company_response(db, c) for c in companies]
 
 
 @router.get("/search", response_model=list[CompanySearchResult])
@@ -69,3 +77,31 @@ def delete_company(company_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "기업을 찾을 수 없습니다.")
     db.delete(company)
     db.commit()
+
+
+@router.post("/{company_id}/tags/{tag_id}", response_model=CompanyResponse)
+def assign_tag(company_id: int, tag_id: int, db: Session = Depends(get_db)):
+    company = db.query(Company).get(company_id)
+    if not company:
+        raise HTTPException(404, "기업을 찾을 수 없습니다.")
+    tag = db.query(Tag).get(tag_id)
+    if not tag:
+        raise HTTPException(404, "태그를 찾을 수 없습니다.")
+    if tag not in company.tags:
+        company.tags.append(tag)
+        db.commit()
+        db.refresh(company)
+    return _build_company_response(db, company)
+
+
+@router.delete("/{company_id}/tags/{tag_id}", response_model=CompanyResponse)
+def remove_tag(company_id: int, tag_id: int, db: Session = Depends(get_db)):
+    company = db.query(Company).get(company_id)
+    if not company:
+        raise HTTPException(404, "기업을 찾을 수 없습니다.")
+    tag = db.query(Tag).get(tag_id)
+    if tag and tag in company.tags:
+        company.tags.remove(tag)
+        db.commit()
+        db.refresh(company)
+    return _build_company_response(db, company)
