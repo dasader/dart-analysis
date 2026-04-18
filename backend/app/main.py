@@ -12,6 +12,7 @@ from app.seed_prompts import seed_default_prompts
 from app.services.analysis_queue import worker as queue_worker
 from app.routers import companies, reports, analyses, scheduler
 from app.routers import prompts as prompts_router
+from app.routers import tags as tags_router
 
 
 @asynccontextmanager
@@ -50,3 +51,4 @@ app.include_router(reports.router)
 app.include_router(analyses.router)
 app.include_router(scheduler.router)
 app.include_router(prompts_router.router)
+app.include_router(tags_router.router)
