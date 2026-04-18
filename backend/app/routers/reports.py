@@ -31,7 +31,9 @@ def get_reports(company_id: int, db: Session = Depends(get_db)):
     )
     results = []
     for r in reports:
-        count = db.query(func.count(Analysis.id)).filter(Analysis.report_id == r.id).scalar()
+        count = db.query(func.count(Analysis.id)).filter(
+            Analysis.report_id == r.id, Analysis.status == "completed"
+        ).scalar()
         resp = ReportResponse.model_validate(r)
         resp.analysis_count = count
         results.append(resp)

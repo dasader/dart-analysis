@@ -20,7 +20,7 @@ def list_companies(db: Session = Depends(get_db)):
         report_count = db.query(func.count(Report.id)).filter(Report.company_id == c.id).scalar()
         latest = (
             db.query(func.max(Analysis.updated_at))
-            .filter(Analysis.company_id == c.id)
+            .filter(Analysis.company_id == c.id, Analysis.status == "completed")
             .scalar()
         )
         resp = CompanyResponse.model_validate(c)
