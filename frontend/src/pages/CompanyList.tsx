@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { fetchCompanies, deleteCompany, fetchTags } from "../api/client";
 import CompanyForm from "../components/CompanyForm";
 import CompanyEditModal from "../components/CompanyEditModal";
+import TagChip from "../components/TagChip";
 import type { Company, Tag } from "../types";
 
 type SortKey = "corp_name" | "corp_code" | "report_count" | "latest_analysis_date";
@@ -21,19 +22,16 @@ export default function CompanyList() {
 
   const load = (tagIds = selectedTagIds) => {
     setLoading(true);
-    Promise.all([
-      fetchCompanies(tagIds.length > 0 ? tagIds : undefined),
-      fetchTags(),
-    ])
-      .then(([cos, tags]) => {
-        setCompanies(cos);
-        setAllTags(tags);
-      })
+    fetchCompanies(tagIds.length > 0 ? tagIds : undefined)
+      .then(setCompanies)
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load([]); }, []);
+  useEffect(() => {
+    fetchTags().then(setAllTags).catch(() => {});
+    load([]);
+  }, []);
 
   const toggleTagFilter = (tagId: number) => {
     const newIds = selectedTagIds.includes(tagId)
@@ -124,14 +122,13 @@ export default function CompanyList() {
         </button>
       </div>
 
-      {/* Search + Tag Filter */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="기업명 또는 기업코드 검색..."
-          className="min-w-48 flex-1 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm outline-none transition-colors placeholder:text-text-tertiary focus:border-accent focus:ring-1 focus:ring-accent/20"
+          className="w-full max-w-sm rounded-lg border border-border bg-surface px-4 py-2.5 text-sm outline-none transition-colors placeholder:text-text-tertiary focus:border-accent focus:ring-1 focus:ring-accent/20"
         />
         {allTags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
@@ -221,7 +218,7 @@ export default function CompanyList() {
                   }`}
                 >
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <Link
                         to={`/companies/${c.id}`}
                         className="font-medium text-navy hover:text-accent"
@@ -231,29 +228,15 @@ export default function CompanyList() {
                       {!c.is_active && (
                         <span className="text-xs text-text-tertiary">(비활성)</span>
                       )}
+                      {c.tags.slice(0, 3).map((tag) => (
+                        <TagChip key={tag.id} tag={tag} size="xs" />
+                      ))}
+                      {c.tags.length > 3 && (
+                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-text-tertiary">
+                          +{c.tags.length - 3}
+                        </span>
+                      )}
                     </div>
-                    {c.tags.length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {c.tags.slice(0, 3).map((tag) => (
-                          <span
-                            key={tag.id}
-                            style={{
-                              backgroundColor: tag.color + "20",
-                              color: tag.color,
-                              border: `1px solid ${tag.color}40`,
-                            }}
-                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                          >
-                            {tag.name}
-                          </span>
-                        ))}
-                        {c.tags.length > 3 && (
-                          <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-text-tertiary">
-                            +{c.tags.length - 3}
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </td>
                   <td className="px-6 py-4 font-mono text-xs text-text-secondary">
                     {c.stock_code || "—"}

@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
 import { fetchTags, createTag, updateTag, deleteTag } from "../api/client";
+import TagChip from "../components/TagChip";
 import type { Tag } from "../types";
 import { TAG_COLORS } from "../types";
 
 export default function TagSettings() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [newName, setNewName] = useState("");
-  const [newColor, setNewColor] = useState(TAG_COLORS[0]);
+  const [newColor, setNewColor] = useState<string>(TAG_COLORS[0]);
   const [editId, setEditId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [editColor, setEditColor] = useState("");
   const [error, setError] = useState("");
 
   const load = () => fetchTags().then(setTags).catch(() => {});
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,7 +74,6 @@ export default function TagSettings() {
         </div>
       )}
 
-      {/* 태그 생성 폼 */}
       <div className="mb-8 rounded-xl border border-border bg-surface p-6 shadow-sm">
         <h2 className="mb-4 text-sm font-semibold text-text-primary">새 태그 추가</h2>
         <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-4">
@@ -118,7 +118,6 @@ export default function TagSettings() {
         </form>
       </div>
 
-      {/* 태그 목록 */}
       <div className="rounded-xl border border-border bg-surface shadow-sm">
         {tags.length === 0 ? (
           <div className="py-12 text-center text-sm text-text-tertiary">
@@ -146,12 +145,7 @@ export default function TagSettings() {
                         autoFocus
                       />
                     ) : (
-                      <span
-                        style={{ backgroundColor: tag.color + "20", color: tag.color, border: `1px solid ${tag.color}40` }}
-                        className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
-                      >
-                        {tag.name}
-                      </span>
+                      <TagChip tag={tag} size="md" />
                     )}
                   </td>
                   <td className="px-6 py-4">

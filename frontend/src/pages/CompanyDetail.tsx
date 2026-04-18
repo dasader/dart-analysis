@@ -16,6 +16,7 @@ import {
 import ReportTable from "../components/ReportTable";
 import DownloadModal from "../components/DownloadModal";
 import AnalysisView from "../components/AnalysisView";
+import TagChip from "../components/TagChip";
 import type { Company, Report, Analysis, Tag } from "../types";
 
 const TABS = [
@@ -128,27 +129,9 @@ export default function CompanyDetail() {
                 DART: {company.corp_code}
               </span>
             </div>
-            {/* 태그 인라인 UI */}
             <div className="no-print mt-2 flex flex-wrap items-center gap-1.5">
               {company.tags.map((tag) => (
-                <span
-                  key={tag.id}
-                  style={{
-                    backgroundColor: tag.color + "20",
-                    color: tag.color,
-                    border: `1px solid ${tag.color}40`,
-                  }}
-                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium"
-                >
-                  {tag.name}
-                  <button
-                    onClick={() => handleRemoveTag(tag.id)}
-                    className="ml-0.5 opacity-60 hover:opacity-100"
-                    title="태그 제거"
-                  >
-                    ×
-                  </button>
-                </span>
+                <TagChip key={tag.id} tag={tag} onRemove={handleRemoveTag} />
               ))}
               <div ref={tagDropdownRef} className="relative">
                 <button

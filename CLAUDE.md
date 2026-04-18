@@ -21,6 +21,14 @@ cd frontend
 npm run dev
 ```
 
+**프론트엔드 타입 검사** (Docker 빌드와 동일한 `tsc -b` 모드):
+```bash
+cd frontend
+npm run typecheck
+```
+- `npx tsc --noEmit`은 Docker 빌드(`tsc -b`)와 검사 방식이 달라 로컬에서 통과해도 Docker 빌드가 실패할 수 있음
+- 프론트엔드 코드 수정 후 Docker 빌드 전에 반드시 `npm run typecheck`로 사전 검증
+
 **프로덕션 (Docker Compose)**:
 ```bash
 docker-compose up --build
