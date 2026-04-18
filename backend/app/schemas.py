@@ -2,6 +2,27 @@ from pydantic import BaseModel
 from datetime import datetime, date
 
 
+# --- Tag ---
+
+class TagResponse(BaseModel):
+    id: int
+    name: str
+    color: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TagCreate(BaseModel):
+    name: str
+    color: str
+
+
+class TagUpdate(BaseModel):
+    name: str | None = None
+    color: str | None = None
+
+
 # --- Company ---
 
 class CompanySearchResult(BaseModel):
@@ -29,6 +50,7 @@ class CompanyResponse(BaseModel):
     updated_at: datetime
     report_count: int = 0
     latest_analysis_date: datetime | None = None
+    tags: list[TagResponse] = []
 
     model_config = {"from_attributes": True}
 
