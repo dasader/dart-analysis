@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
-  fetchCompanies,
+  fetchCompany,
   fetchReports,
   fetchCompanyAnalyses,
   fetchTags,
@@ -49,13 +49,13 @@ export default function CompanyDetail() {
   };
 
   const load = async () => {
-    const [companies, reps, anals, tags] = await Promise.all([
-      fetchCompanies(),
+    const [companyData, reps, anals, tags] = await Promise.all([
+      fetchCompany(companyId).catch(() => null),
       fetchReports(companyId),
       fetchCompanyAnalyses(companyId),
       fetchTags(),
     ]);
-    setCompany(companies.find((c) => c.id === companyId) || null);
+    setCompany(companyData);
     setReports(reps);
     setAnalyses(anals);
     setAllTags(tags);
@@ -86,8 +86,8 @@ export default function CompanyDetail() {
       const updated = await assignTag(companyId, tagId);
       setCompany(updated);
       setShowTagDropdown(false);
-    } catch (e: any) {
-      showToast(e.message, "err");
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
     }
   };
 
@@ -95,8 +95,8 @@ export default function CompanyDetail() {
     try {
       const updated = await removeCompanyTag(companyId, tagId);
       setCompany(updated);
-    } catch (e: any) {
-      showToast(e.message, "err");
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
     }
   };
 
@@ -105,6 +105,8 @@ export default function CompanyDetail() {
       <div className="py-16 text-center text-text-tertiary">로딩 중...</div>
     );
   }
+
+  const availableTags = allTags.filter((t) => !company.tags.some((ct) => ct.id === t.id));
 
   return (
     <div>
@@ -142,26 +144,24 @@ export default function CompanyDetail() {
                 </button>
                 {showTagDropdown && (
                   <div className="absolute left-0 top-full z-20 mt-1 min-w-36 rounded-lg border border-border bg-surface shadow-lg">
-                    {allTags.filter((t) => !company.tags.some((ct) => ct.id === t.id)).length === 0 ? (
+                    {availableTags.length === 0 ? (
                       <p className="px-3 py-2.5 text-xs text-text-tertiary">
                         할당 가능한 태그가 없습니다.
                       </p>
                     ) : (
-                      allTags
-                        .filter((t) => !company.tags.some((ct) => ct.id === t.id))
-                        .map((tag) => (
-                          <button
-                            key={tag.id}
-                            onClick={() => handleAssignTag(tag.id)}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-background/60"
-                          >
-                            <span
-                              style={{ backgroundColor: tag.color }}
-                              className="inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
-                            />
-                            {tag.name}
-                          </button>
-                        ))
+                      availableTags.map((tag) => (
+                        <button
+                          key={tag.id}
+                          onClick={() => handleAssignTag(tag.id)}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-background/60"
+                        >
+                          <span
+                            style={{ backgroundColor: tag.color }}
+                            className="inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
+                          />
+                          {tag.name}
+                        </button>
+                      ))
                     )}
                   </div>
                 )}
@@ -183,8 +183,8 @@ export default function CompanyDetail() {
                   const result = await analyzeAll(companyId);
                   showToast(result.message);
                   load();
-                } catch (e: any) {
-                  showToast(e.message, "err");
+                } catch (e: unknown) {
+                  showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
                 } finally {
                   setAnalyzing(false);
                 }
@@ -248,8 +248,8 @@ export default function CompanyDetail() {
               showToast(result.message);
               load();
               setTab("subsidiary");
-            } catch (e: any) {
-              showToast(e.message, "err");
+            } catch (e: unknown) {
+              showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
             } finally {
               setAnalyzing(false);
             }
@@ -261,8 +261,8 @@ export default function CompanyDetail() {
               await deleteReport(reportId);
               showToast("보고서가 삭제되었습니다.");
               load();
-            } catch (e: any) {
-              showToast(e.message, "err");
+            } catch (e: unknown) {
+              showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
             }
           }}
           onRedownload={async (reportId) => {
@@ -276,8 +276,8 @@ export default function CompanyDetail() {
               await redownloadReport(reportId);
               showToast("보고서 파일을 재다운로드했습니다. 기존 분석 결과가 삭제되었습니다.");
               load();
-            } catch (e: any) {
-              showToast(e.message, "err");
+            } catch (e: unknown) {
+              showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
             }
           }}
         />

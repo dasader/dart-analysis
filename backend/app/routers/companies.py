@@ -46,6 +46,14 @@ async def search(name: str):
     return [CompanySearchResult(**r) for r in results]
 
 
+@router.get("/{company_id}", response_model=CompanyResponse)
+def get_company(company_id: int, db: Session = Depends(get_db)):
+    company = db.query(Company).get(company_id)
+    if not company:
+        raise HTTPException(404, "기업을 찾을 수 없습니다.")
+    return _build_company_response(db, company)
+
+
 @router.post("", response_model=CompanyResponse, status_code=201)
 def create_company(body: CompanyCreate, db: Session = Depends(get_db)):
     existing = db.query(Company).filter(Company.corp_code == body.corp_code).first()

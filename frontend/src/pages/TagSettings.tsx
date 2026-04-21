@@ -25,8 +25,8 @@ export default function TagSettings() {
       setNewName("");
       setNewColor(TAG_COLORS[0]);
       load();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
     }
   };
 
@@ -44,8 +44,8 @@ export default function TagSettings() {
       await updateTag(id, { name: editName.trim(), color: editColor });
       setEditId(null);
       load();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
     }
   };
 
@@ -54,8 +54,8 @@ export default function TagSettings() {
     try {
       await deleteTag(tag.id);
       load();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
     }
   };
 

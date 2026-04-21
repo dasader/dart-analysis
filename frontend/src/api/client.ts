@@ -30,6 +30,10 @@ export function fetchCompanies(tagIds?: number[]): Promise<Company[]> {
   return request(`/companies${qs}`);
 }
 
+export function fetchCompany(id: number): Promise<Company> {
+  return request(`/companies/${id}`);
+}
+
 export function searchCompanies(name: string): Promise<CompanySearchResult[]> {
   return request(`/companies/search?name=${encodeURIComponent(name)}`);
 }
