@@ -1,11 +1,16 @@
 import type {
   Company,
+  CompanyCreate,
+  CompanyUpdate,
   CompanySearchResult,
   Report,
   Analysis,
   SchedulerStatus,
   PromptTemplate,
+  PromptUpdate,
   Tag,
+  TagCreate,
+  TagUpdate,
 } from "../types";
 
 const BASE = "/api";
@@ -38,11 +43,7 @@ export function searchCompanies(name: string): Promise<CompanySearchResult[]> {
   return request(`/companies/search?name=${encodeURIComponent(name)}`);
 }
 
-export function createCompany(body: {
-  corp_code: string;
-  corp_name: string;
-  stock_code?: string | null;
-}): Promise<Company> {
+export function createCompany(body: CompanyCreate): Promise<Company> {
   return request("/companies", {
     method: "POST",
     body: JSON.stringify(body),
@@ -51,7 +52,7 @@ export function createCompany(body: {
 
 export function updateCompany(
   id: number,
-  body: { corp_name?: string; stock_code?: string; is_active?: boolean },
+  body: CompanyUpdate,
 ): Promise<Company> {
   return request(`/companies/${id}`, {
     method: "PUT",
@@ -119,7 +120,7 @@ export function fetchPrompts(): Promise<PromptTemplate[]> {
 
 export function updatePrompt(
   analysisType: string,
-  body: { system_prompt: string; user_prompt_template: string },
+  body: PromptUpdate,
 ): Promise<PromptTemplate> {
   return request(`/prompts/${analysisType}`, {
     method: "PUT",
@@ -133,13 +134,13 @@ export function fetchTags(): Promise<Tag[]> {
   return request("/tags");
 }
 
-export function createTag(body: { name: string; color: string }): Promise<Tag> {
+export function createTag(body: TagCreate): Promise<Tag> {
   return request("/tags", { method: "POST", body: JSON.stringify(body) });
 }
 
 export function updateTag(
   id: number,
-  body: { name?: string; color?: string },
+  body: TagUpdate,
 ): Promise<Tag> {
   return request(`/tags/${id}`, { method: "PUT", body: JSON.stringify(body) });
 }

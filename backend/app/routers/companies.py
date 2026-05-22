@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.constants import AnalysisStatus
-from app.crud import get_or_404
+from app.crud import apply_update, get_or_404, group_agg
 from app.database import get_db
 from app.models import Company, Report, Analysis, Tag
 from app.schemas import (
@@ -14,6 +14,16 @@ from app.schemas import (
 from app.services.dart_client import search_companies
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
+
+
+def _aggregates(db: Session, company_ids: list[int]) -> tuple[dict, dict]:
+    """기업 id 목록의 (보고서 수, 최근 완료 분석일)을 각각 단일 group_by 쿼리로 집계."""
+    report_counts = group_agg(db, func.count(Report.id), Report.company_id, company_ids)
+    latest_dates = group_agg(
+        db, func.max(Analysis.updated_at), Analysis.company_id, company_ids,
+        Analysis.status == AnalysisStatus.COMPLETED,
+    )
+    return report_counts, latest_dates
 
 
 def _company_response(
@@ -26,16 +36,11 @@ def _company_response(
 
 
 def _single_company_response(db: Session, company: Company) -> CompanyResponse:
-    """단건 응답용 — 보고서 수·최근 분석일을 개별 조회."""
-    report_count = (
-        db.query(func.count(Report.id)).filter(Report.company_id == company.id).scalar()
+    """단건 응답용 — 집계를 공용 헬퍼로 조회 (목록 경로와 동일 로직 재사용)."""
+    report_counts, latest_dates = _aggregates(db, [company.id])
+    return _company_response(
+        company, report_counts.get(company.id, 0), latest_dates.get(company.id)
     )
-    latest = (
-        db.query(func.max(Analysis.updated_at))
-        .filter(Analysis.company_id == company.id, Analysis.status == AnalysisStatus.COMPLETED)
-        .scalar()
-    )
-    return _company_response(company, report_count or 0, latest)
 
 
 @router.get("", response_model=list[CompanyResponse])
@@ -53,23 +58,7 @@ def list_companies(tag_ids: str | None = None, db: Session = Depends(get_db)):
     if not companies:
         return []
 
-    # 보고서 수·최근 분석일을 각각 단일 group_by 쿼리로 집계 (기업당 2쿼리 N+1 제거)
-    company_ids = [c.id for c in companies]
-    report_counts = dict(
-        db.query(Report.company_id, func.count(Report.id))
-        .filter(Report.company_id.in_(company_ids))
-        .group_by(Report.company_id)
-        .all()
-    )
-    latest_dates = dict(
-        db.query(Analysis.company_id, func.max(Analysis.updated_at))
-        .filter(
-            Analysis.company_id.in_(company_ids),
-            Analysis.status == AnalysisStatus.COMPLETED,
-        )
-        .group_by(Analysis.company_id)
-        .all()
-    )
+    report_counts, latest_dates = _aggregates(db, [c.id for c in companies])
     return [
         _company_response(c, report_counts.get(c.id, 0), latest_dates.get(c.id))
         for c in companies
@@ -99,14 +88,14 @@ def create_company(body: CompanyCreate, db: Session = Depends(get_db)):
     db.add(company)
     db.commit()
     db.refresh(company)
-    return _single_company_response(db, company)
+    # 신규 기업은 보고서·분석이 없으므로 집계 쿼리 없이 0/None
+    return _company_response(company, 0, None)
 
 
 @router.put("/{company_id}", response_model=CompanyResponse)
 def update_company(company_id: int, body: CompanyUpdate, db: Session = Depends(get_db)):
     company = get_or_404(db, Company, company_id, "기업을 찾을 수 없습니다.")
-    for key, val in body.model_dump(exclude_unset=True).items():
-        setattr(company, key, val)
+    apply_update(company, body)
     db.commit()
     db.refresh(company)
     return _single_company_response(db, company)

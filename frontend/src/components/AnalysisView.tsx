@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { analyzeReport } from "../api/client";
@@ -11,7 +11,6 @@ import {
 import type { Analysis, AnalysisType, Report } from "../types";
 
 interface Props {
-  companyId: number;
   companyName: string;
   reports: Report[];
   analyses: Analysis[];
@@ -44,15 +43,15 @@ const PROSE_CLASSES = `
 `.trim();
 
 export default function AnalysisView({
-  companyId: _companyId,
   companyName,
   reports,
   analyses,
   analysisType,
   onRefresh,
 }: Props) {
-  const relevantAnalyses = analyses.filter(
-    (a) => a.analysis_type === analysisType,
+  const relevantAnalyses = useMemo(
+    () => analyses.filter((a) => a.analysis_type === analysisType),
+    [analyses, analysisType],
   );
 
   // pending 또는 running 상태가 있으면 5초마다 자동 폴링
@@ -70,15 +69,22 @@ export default function AnalysisView({
     };
   }, [hasActiveJob, onRefresh]);
 
-  const years = [
-    ...new Set(
-      reports
-        .filter((r) =>
-          relevantAnalyses.some((a) => a.report_id === r.id),
-        )
-        .map((r) => r.fiscal_year),
-    ),
-  ].sort((a, b) => b - a);
+  const reportById = useMemo(
+    () => new Map(reports.map((r) => [r.id, r])),
+    [reports],
+  );
+
+  const years = useMemo(
+    () =>
+      [
+        ...new Set(
+          reports
+            .filter((r) => relevantAnalyses.some((a) => a.report_id === r.id))
+            .map((r) => r.fiscal_year),
+        ),
+      ].sort((a, b) => b - a),
+    [reports, relevantAnalyses],
+  );
 
   // 사용자가 고른 연도만 보관하고, 실제 표시 연도는 매 렌더 파생 (보정용 effect 불필요)
   const [userSelectedYear, setUserSelectedYear] = useState<number | null>(null);
@@ -95,18 +101,20 @@ export default function AnalysisView({
   );
 
   // 인쇄용: 선택된 연도의 완료된 3가지 분석을 고정 순서로
-  const printAnalyses = selectedReport
-    ? (ANALYSIS_TYPE_KEYS
-        .map((type) =>
-          analyses.find(
-            (a) =>
-              a.report_id === selectedReport.id &&
-              a.analysis_type === type &&
-              a.status === "completed",
-          ),
-        )
-        .filter(Boolean) as Analysis[])
-    : [];
+  const printAnalyses = useMemo(
+    () =>
+      selectedReport
+        ? (ANALYSIS_TYPE_KEYS.map((type) =>
+            analyses.find(
+              (a) =>
+                a.report_id === selectedReport.id &&
+                a.analysis_type === type &&
+                a.status === "completed",
+            ),
+          ).filter(Boolean) as Analysis[])
+        : [],
+    [selectedReport, analyses],
+  );
 
   // 해당 보고서에 완료된 분석 결과가 있으면 true
   const hasCompletedResult = (reportId: number) =>
@@ -129,10 +137,12 @@ export default function AnalysisView({
     }
   };
 
-  const unanalyzedReports = reports.filter(
-    (r) =>
-      r.file_path &&
-      !relevantAnalyses.some((a) => a.report_id === r.id),
+  const unanalyzedReports = useMemo(
+    () =>
+      reports.filter(
+        (r) => r.file_path && !relevantAnalyses.some((a) => a.report_id === r.id),
+      ),
+    [reports, relevantAnalyses],
   );
 
   // 선택된 분석 상태에 따른 본문 (중첩 삼항 대신 early return으로 평탄화)
@@ -262,7 +272,7 @@ export default function AnalysisView({
           <div className="mb-6 flex flex-wrap gap-2">
             {years.map((y) => {
               const yearAnalysis = relevantAnalyses.find(
-                (a) => reports.find((r) => r.id === a.report_id)?.fiscal_year === y,
+                (a) => reportById.get(a.report_id)?.fiscal_year === y,
               );
               const statusInfo = yearAnalysis
                 ? STATUS_LABELS[yearAnalysis.status]

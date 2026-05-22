@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchTags, createTag, updateTag, deleteTag } from "../api/client";
 import TagChip from "../components/TagChip";
+import ColorPicker from "../components/ColorPicker";
 import { getErrorMessage } from "../lib/errors";
 import type { Tag } from "../types";
 import { TAG_COLORS } from "../types";
@@ -94,20 +95,7 @@ export default function TagSettings() {
             <label className="mb-1.5 block text-xs font-medium text-text-secondary">
               색상
             </label>
-            <div className="flex flex-wrap gap-1.5">
-              {TAG_COLORS.map((hex) => (
-                <button
-                  key={hex}
-                  type="button"
-                  onClick={() => setNewColor(hex)}
-                  style={{ backgroundColor: hex }}
-                  className={`h-7 w-7 rounded-full transition-transform hover:scale-110 ${
-                    newColor === hex ? "ring-2 ring-offset-2 ring-gray-400 scale-110" : ""
-                  }`}
-                  title={hex}
-                />
-              ))}
-            </div>
+            <ColorPicker value={newColor} onChange={setNewColor} />
           </div>
           <button
             type="submit"
@@ -151,19 +139,7 @@ export default function TagSettings() {
                   </td>
                   <td className="px-6 py-4">
                     {editId === tag.id ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {TAG_COLORS.map((hex) => (
-                          <button
-                            key={hex}
-                            type="button"
-                            onClick={() => setEditColor(hex)}
-                            style={{ backgroundColor: hex }}
-                            className={`h-6 w-6 rounded-full transition-transform hover:scale-110 ${
-                              editColor === hex ? "ring-2 ring-offset-1 ring-gray-400 scale-110" : ""
-                            }`}
-                          />
-                        ))}
-                      </div>
+                      <ColorPicker value={editColor} onChange={setEditColor} size="sm" />
                     ) : (
                       <span
                         style={{ backgroundColor: tag.color }}

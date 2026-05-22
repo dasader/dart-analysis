@@ -18,16 +18,16 @@ import DownloadModal from "../components/DownloadModal";
 import AnalysisView from "../components/AnalysisView";
 import TagChip from "../components/TagChip";
 import { getErrorMessage } from "../lib/errors";
-import type { Company, Report, Analysis, Tag } from "../types";
+import { ANALYSIS_TYPE_KEYS, ANALYSIS_TYPE_LABELS } from "../types";
+import type { Company, Report, Analysis, AnalysisType, Tag } from "../types";
 
-const TABS = [
+type TabKey = "reports" | AnalysisType;
+
+// 분석 탭은 단일 출처(ANALYSIS_TYPE_KEYS/LABELS)에서 파생
+const TABS: { key: TabKey; label: string }[] = [
   { key: "reports", label: "보고서" },
-  { key: "subsidiary", label: "종속회사 분석" },
-  { key: "rnd", label: "R&D/투자 분석" },
-  { key: "national_tech", label: "국가전략기술" },
-] as const;
-
-type TabKey = (typeof TABS)[number]["key"];
+  ...ANALYSIS_TYPE_KEYS.map((k) => ({ key: k, label: ANALYSIS_TYPE_LABELS[k] })),
+];
 
 // 폴링 시 분석 상태가 실제로 바뀌었을 때만 setState 하기 위한 비교
 function analysesEqual(a: Analysis[], b: Analysis[]): boolean {
@@ -63,17 +63,26 @@ export default function CompanyDetail() {
   };
 
   const load = useCallback(async () => {
-    const [companyData, reps, anals, tags] = await Promise.all([
+    const [companyData, reps, anals] = await Promise.all([
       fetchCompany(companyId).catch(() => null),
       fetchReports(companyId),
       fetchCompanyAnalyses(companyId),
-      fetchTags(),
     ]);
     setCompany(companyData);
     setReports(reps);
     setAnalyses(anals);
-    setAllTags(tags);
   }, [companyId]);
+
+  // 비동기 액션 공통 처리: 성공 메시지 토스트 + 재로딩, 실패 시 에러 토스트
+  const runWithToast = async (action: () => Promise<string | void>) => {
+    try {
+      const msg = await action();
+      if (msg) showToast(msg);
+      await load();
+    } catch (e) {
+      showToast(getErrorMessage(e), "err");
+    }
+  };
 
   // 폴링 전용: 변하지 않는 회사/보고서/태그는 건너뛰고 분석 상태만 갱신
   const refreshAnalyses = useCallback(async () => {
@@ -84,6 +93,11 @@ export default function CompanyDetail() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // 태그 목록은 거의 불변 → 마운트 시 1회만 조회
+  useEffect(() => {
+    fetchTags().then(setAllTags).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -197,17 +211,11 @@ export default function CompanyDetail() {
             </button>
             <button
               disabled={analyzing}
-              onClick={async () => {
+              onClick={() => {
                 setAnalyzing(true);
-                try {
-                  const result = await analyzeAll(companyId);
-                  showToast(result.message);
-                  load();
-                } catch (e: unknown) {
-                  showToast(getErrorMessage(e), "err");
-                } finally {
-                  setAnalyzing(false);
-                }
+                runWithToast(async () => (await analyzeAll(companyId)).message).finally(
+                  () => setAnalyzing(false),
+                );
               }}
               className="btn btn-ghost-accent"
             >
@@ -261,51 +269,42 @@ export default function CompanyDetail() {
         <ReportTable
           reports={reports}
           analyzing={analyzing}
-          onAnalyze={async (reportId) => {
+          onAnalyze={(reportId) => {
             setAnalyzing(true);
-            try {
+            runWithToast(async () => {
               const result = await analyzeReport(reportId);
-              showToast(result.message);
-              load();
               setTab("subsidiary");
-            } catch (e: unknown) {
-              showToast(getErrorMessage(e), "err");
-            } finally {
-              setAnalyzing(false);
-            }
+              return result.message;
+            }).finally(() => setAnalyzing(false));
           }}
-          onDelete={async (reportId) => {
+          onDelete={(reportId) => {
             const report = reports.find((r) => r.id === reportId);
             if (!confirm(`"${report?.report_name}" 보고서를 삭제하시겠습니까?\n관련 분석 데이터도 함께 삭제됩니다.`)) return;
-            try {
+            runWithToast(async () => {
               await deleteReport(reportId);
-              showToast("보고서가 삭제되었습니다.");
-              load();
-            } catch (e: unknown) {
-              showToast(getErrorMessage(e), "err");
-            }
+              return "보고서가 삭제되었습니다.";
+            });
           }}
-          onRedownload={async (reportId) => {
+          onRedownload={(reportId) => {
             const report = reports.find((r) => r.id === reportId);
-            if (report && report.analysis_count > 0) {
-              if (!confirm(
-                `"${report.report_name}"\n\n이 보고서에 분석 결과 ${report.analysis_count}건이 있습니다.\n재다운로드하면 기존 분석 결과가 모두 삭제됩니다.\n계속하시겠습니까?`
-              )) return;
-            }
-            try {
+            if (
+              report &&
+              report.analysis_count > 0 &&
+              !confirm(
+                `"${report.report_name}"\n\n이 보고서에 분석 결과 ${report.analysis_count}건이 있습니다.\n재다운로드하면 기존 분석 결과가 모두 삭제됩니다.\n계속하시겠습니까?`,
+              )
+            )
+              return;
+            return runWithToast(async () => {
               await redownloadReport(reportId);
-              showToast("보고서 파일을 재다운로드했습니다. 기존 분석 결과가 삭제되었습니다.");
-              load();
-            } catch (e: unknown) {
-              showToast(getErrorMessage(e), "err");
-            }
+              return "보고서 파일을 재다운로드했습니다. 기존 분석 결과가 삭제되었습니다.";
+            });
           }}
         />
       )}
 
       {tab !== "reports" && (
         <AnalysisView
-          companyId={companyId}
           companyName={company.corp_name}
           reports={reports}
           analyses={analyses}

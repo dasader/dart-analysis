@@ -19,9 +19,9 @@ export default function CompanyList() {
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
 
-  const load = (tagIds = selectedTagIds) => {
+  const load = () => {
     setLoading(true);
-    fetchCompanies(tagIds.length > 0 ? tagIds : undefined)
+    fetchCompanies()
       .then(setCompanies)
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -29,30 +29,33 @@ export default function CompanyList() {
 
   useEffect(() => {
     fetchTags().then(setAllTags).catch(() => {});
-    load([]);
+    load();
   }, []);
 
+  // 태그 필터는 검색어와 동일하게 클라이언트 측에서 처리 (서버 재조회 불필요)
   const toggleTagFilter = (tagId: number) => {
-    const newIds = selectedTagIds.includes(tagId)
-      ? selectedTagIds.filter((id) => id !== tagId)
-      : [...selectedTagIds, tagId];
-    setSelectedTagIds(newIds);
-    load(newIds);
+    setSelectedTagIds((ids) =>
+      ids.includes(tagId) ? ids.filter((id) => id !== tagId) : [...ids, tagId],
+    );
+  };
+
+  const accessors: Record<SortKey, (c: Company) => string | number> = {
+    corp_name: (c) => c.corp_name,
+    corp_code: (c) => c.corp_code,
+    report_count: (c) => c.report_count,
+    latest_analysis_date: (c) => c.latest_analysis_date ?? "",
   };
 
   const filtered = companies
-    .filter((c) =>
-      c.corp_name.toLowerCase().includes(search.toLowerCase()) ||
-      c.corp_code.toLowerCase().includes(search.toLowerCase()),
-    )
-    .sort((a, b) => {
-      let av: string | number, bv: string | number;
-      if (sortKey === "corp_name") { av = a.corp_name; bv = b.corp_name; }
-      else if (sortKey === "corp_code") { av = a.corp_code; bv = b.corp_code; }
-      else if (sortKey === "report_count") { av = a.report_count; bv = b.report_count; }
-      else { av = a.latest_analysis_date ?? ""; bv = b.latest_analysis_date ?? ""; }
-      return compare(av, bv);
-    });
+    .filter((c) => {
+      const q = search.toLowerCase();
+      const matchesSearch =
+        c.corp_name.toLowerCase().includes(q) || c.corp_code.toLowerCase().includes(q);
+      const matchesTags =
+        selectedTagIds.length === 0 || c.tags.some((t) => selectedTagIds.includes(t.id));
+      return matchesSearch && matchesTags;
+    })
+    .sort((a, b) => compare(accessors[sortKey](a), accessors[sortKey](b)));
 
   const handleDelete = async (c: Company) => {
     if (!confirm(`"${c.corp_name}"을(를) 삭제하시겠습니까?\n관련 보고서와 분석 데이터가 모두 삭제됩니다.`)) return;
@@ -126,7 +129,7 @@ export default function CompanyList() {
             })}
             {selectedTagIds.length > 0 && (
               <button
-                onClick={() => { setSelectedTagIds([]); load([]); }}
+                onClick={() => setSelectedTagIds([])}
                 className="rounded-full border border-border px-3 py-1 text-xs text-text-tertiary hover:text-text-primary"
               >
                 초기화

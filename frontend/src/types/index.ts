@@ -90,3 +90,32 @@ export interface PromptTemplate {
   user_prompt_template: string;
   updated_at: string;
 }
+
+// --- API 요청 body 타입 (백엔드 schemas.py 대응) ---
+
+export interface CompanyCreate {
+  corp_code: string;
+  corp_name: string;
+  stock_code?: string | null;
+}
+
+export interface CompanyUpdate {
+  corp_name?: string;
+  stock_code?: string;
+  is_active?: boolean;
+}
+
+export interface TagCreate {
+  name: string;
+  color: string;
+}
+
+export interface TagUpdate {
+  name?: string;
+  color?: string;
+}
+
+export interface PromptUpdate {
+  system_prompt: string;
+  user_prompt_template: string;
+}

@@ -9,7 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.constants import AnalysisStatus
-from app.crud import get_or_404
+from app.crud import get_or_404, group_agg
 from app.database import get_db
 from app.models import Company, Report, Analysis
 from app.schemas import ReportResponse, ReportDownloadRequest
@@ -37,14 +37,9 @@ def get_reports(company_id: int, db: Session = Depends(get_db)):
         .all()
     )
     # 보고서별 완료 분석 수를 단일 group_by 쿼리로 집계 (N+1 제거)
-    counts = dict(
-        db.query(Analysis.report_id, func.count(Analysis.id))
-        .filter(
-            Analysis.report_id.in_([r.id for r in reports]),
-            Analysis.status == AnalysisStatus.COMPLETED,
-        )
-        .group_by(Analysis.report_id)
-        .all()
+    counts = group_agg(
+        db, func.count(Analysis.id), Analysis.report_id,
+        [r.id for r in reports], Analysis.status == AnalysisStatus.COMPLETED,
     )
     results = []
     for r in reports:
@@ -87,12 +82,10 @@ async def download_reports(
     for dr in dart_reports:
         existing = existing_by_rcept.get(dr["rcept_no"])
         if existing:
-            # 이전 버그로 잘못 저장된 fiscal_year를 보고서명 기준으로 교정
+            # 이전 버그로 잘못 저장된 fiscal_year를 보고서명 기준으로 교정 (커밋은 루프 후 1회)
             parsed_year = extract_fiscal_year_from_name(dr["report_name"])
             if parsed_year and existing.fiscal_year != parsed_year:
                 existing.fiscal_year = parsed_year
-                db.commit()
-                db.refresh(existing)
             downloaded.append(existing)
             continue
 
@@ -101,6 +94,7 @@ async def download_reports(
         )
         downloaded.append(report)
 
+    db.commit()  # 누적된 fiscal_year 교정을 1회 커밋
     return [ReportResponse.model_validate(r) for r in downloaded]
 
 

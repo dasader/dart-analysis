@@ -12,7 +12,34 @@ from app.config import settings
 from app.constants import REPORT_TYPE_ANNUAL
 
 DART_BASE = "https://opendart.fss.or.kr/api"
-CORP_CODE_URL = "https://opendart.fss.or.kr/api/corpCode.xml"
+
+# 커넥션 풀·TLS 핸드셰이크 재사용을 위해 공유 AsyncClient 1개를 유지
+_http: httpx.AsyncClient | None = None
+
+
+def _get_http() -> httpx.AsyncClient:
+    global _http
+    if _http is None or _http.is_closed:
+        _http = httpx.AsyncClient(timeout=30)
+    return _http
+
+
+async def aclose_http() -> None:
+    """앱 종료 시 공유 클라이언트 정리 (lifespan에서 호출)."""
+    global _http
+    if _http is not None and not _http.is_closed:
+        await _http.aclose()
+        _http = None
+
+
+async def _dart_get(path: str, params: dict, timeout: float | None = None) -> httpx.Response:
+    """DART API GET — crtfc_key 자동 주입 + 공유 클라이언트로 커넥션 재사용."""
+    kwargs: dict = {"params": {"crtfc_key": settings.opendart_api_key, **params}}
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    resp = await _get_http().get(f"{DART_BASE}/{path}", **kwargs)
+    resp.raise_for_status()
+    return resp
 
 # corpCode.xml은 전체 기업 목록(수 MB)이라 거의 변하지 않음 → 파싱 결과를 캐시
 _CORP_CACHE_TTL = 24 * 3600
@@ -41,13 +68,7 @@ async def _load_corp_list() -> list[dict]:
     if _corp_cache is not None and now - _corp_cache_at < _CORP_CACHE_TTL:
         return _corp_cache
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(
-            CORP_CODE_URL,
-            params={"crtfc_key": settings.opendart_api_key},
-        )
-        resp.raise_for_status()
-
+    resp = await _dart_get("corpCode.xml", {})
     loop = asyncio.get_running_loop()
     corps = await loop.run_in_executor(None, _parse_corp_zip, resp.content)
     _corp_cache = corps
@@ -73,8 +94,7 @@ async def list_reports(
 
     pblntf_ty: A=정기공시(사업/분기/반기보고서)
     """
-    params = {
-        "crtfc_key": settings.opendart_api_key,
+    params: dict = {
         "corp_code": corp_code,
         "pblntf_ty": pblntf_ty,
         "page_count": 100,
@@ -84,10 +104,8 @@ async def list_reports(
     if end_de:
         params["end_de"] = end_de
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(f"{DART_BASE}/list.json", params=params)
-        resp.raise_for_status()
-        data = resp.json()
+    resp = await _dart_get("list.json", params)
+    data = resp.json()
 
     if data.get("status") != "000":
         return []
@@ -152,13 +170,5 @@ def extract_fiscal_year_from_name(report_name: str) -> int | None:
 
 async def download_document(rcept_no: str) -> bytes:
     """OpenDART 문서 다운로드 API로 ZIP 파일 다운로드."""
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.get(
-            f"{DART_BASE}/document.xml",
-            params={
-                "crtfc_key": settings.opendart_api_key,
-                "rcept_no": rcept_no,
-            },
-        )
-        resp.raise_for_status()
+    resp = await _dart_get("document.xml", {"rcept_no": rcept_no}, timeout=60)
     return resp.content

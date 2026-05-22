@@ -3,10 +3,10 @@ import json
 import logging
 import re
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.constants import AnalysisStatus
-from app.models import Analysis, PromptTemplate
+from app.models import Analysis, PromptTemplate, Report
 from app.services.gemini_client import generate, MODEL_NAME
 from app.services.report_service import extract_text_from_report
 
@@ -36,6 +36,7 @@ async def run_combined_analysis(db: Session, report_id: int) -> None:
     """report_id에 대해 pending 상태인 분석들을 Gemini 1회 호출로 일괄 처리."""
     pending = (
         db.query(Analysis)
+        .options(joinedload(Analysis.report).joinedload(Report.company))
         .filter(Analysis.report_id == report_id, Analysis.status == AnalysisStatus.PENDING)
         .all()
     )
@@ -61,13 +62,16 @@ async def run_combined_analysis(db: Session, report_id: int) -> None:
         if not report_text:
             raise ValueError("보고서 텍스트를 추출할 수 없습니다.")
 
-        # 각 분석 유형의 프롬프트 템플릿 로드
-        templates: dict[str, PromptTemplate] = {}
-        for atype in types_to_run:
-            t = db.query(PromptTemplate).filter_by(analysis_type=atype).first()
-            if not t:
-                raise ValueError(f"프롬프트 템플릿이 없습니다: {atype}")
-            templates[atype] = t
+        # 분석 유형별 프롬프트 템플릿을 1쿼리로 일괄 로드
+        templates: dict[str, PromptTemplate] = {
+            t.analysis_type: t
+            for t in db.query(PromptTemplate)
+            .filter(PromptTemplate.analysis_type.in_(types_to_run))
+            .all()
+        }
+        missing = [t for t in types_to_run if t not in templates]
+        if missing:
+            raise ValueError(f"프롬프트 템플릿이 없습니다: {', '.join(missing)}")
 
         # ── 통합 시스템 프롬프트 ── (라벨은 PromptTemplate.label 재사용)
         sections = "\n\n".join(
@@ -109,9 +113,8 @@ async def run_combined_analysis(db: Session, report_id: int) -> None:
         for a in pending:
             text = result.get(a.analysis_type, "")
             a.result_summary = text
-            a.result_json = json.dumps({"raw_response": text}, ensure_ascii=False)
             a.model_name = MODEL_NAME
-            a.status = "completed" if text else "failed"
+            a.status = AnalysisStatus.COMPLETED if text else AnalysisStatus.FAILED
             if not text:
                 a.error_message = "LLM 응답에 해당 분석 유형 결과가 없습니다."
         db.commit()
@@ -119,7 +122,7 @@ async def run_combined_analysis(db: Session, report_id: int) -> None:
 
     except Exception as e:
         for a in pending:
-            a.status = "failed"
+            a.status = AnalysisStatus.FAILED
             a.error_message = str(e)
         db.commit()
         logger.exception("combined analysis 실패: report_id=%d", report_id)

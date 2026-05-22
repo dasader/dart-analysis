@@ -1,5 +1,7 @@
+from collections import defaultdict
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.constants import ANALYSIS_TYPES, AnalysisStatus
 from app.crud import get_or_404
@@ -12,11 +14,7 @@ router = APIRouter(tags=["analyses"])
 
 
 def _reset_or_create_analysis(
-    db: Session,
-    company_id: int,
-    report_id: int,
-    analysis_type: str,
-    existing: Analysis | None,
+    db: Session, report: Report, analysis_type: str, existing: Analysis | None
 ) -> Analysis:
     """분석 레코드를 pending으로 리셋하거나 새로 생성한다 (커밋은 호출자 책임).
 
@@ -28,13 +26,30 @@ def _reset_or_create_analysis(
         return existing
 
     analysis = Analysis(
-        company_id=company_id,
-        report_id=report_id,
+        company_id=report.company_id,
+        report_id=report.id,
         analysis_type=analysis_type,
         status=AnalysisStatus.PENDING,
     )
     db.add(analysis)
     return analysis
+
+
+def _queue_report_types(
+    db: Session, report: Report, existing_by_type: dict, skip_completed: bool
+) -> bool:
+    """report의 분석 유형들을 pending으로 만들고, 큐 투입이 필요한지(대기 항목 존재) 반환.
+
+    skip_completed=True면 이미 완료된 유형은 건너뛴다(기업 단위 일괄 분석용).
+    """
+    has_pending = False
+    for atype in ANALYSIS_TYPES:
+        existing = existing_by_type.get(atype)
+        if skip_completed and existing and existing.status == AnalysisStatus.COMPLETED:
+            continue
+        _reset_or_create_analysis(db, report, atype, existing)
+        has_pending = True
+    return has_pending
 
 
 @router.post("/api/reports/{report_id}/analyze", response_model=AnalysisResponse)
@@ -53,9 +68,7 @@ def analyze_report(
         report_id=report.id,
         analysis_type=body.analysis_type,
     ).first()
-    analysis = _reset_or_create_analysis(
-        db, report.company_id, report.id, body.analysis_type, existing
-    )
+    analysis = _reset_or_create_analysis(db, report, body.analysis_type, existing)
     db.commit()
     db.refresh(analysis)
     enqueue(report.id)  # report_id 기반 큐 — worker가 pending 항목 일괄 처리
@@ -69,14 +82,11 @@ def analyze_report_all(report_id: int, db: Session = Depends(get_db)):
     if not report.file_path:
         raise HTTPException(400, "보고서 파일이 아직 다운로드되지 않았습니다.")
 
-    existing_map = {
+    existing_by_type = {
         a.analysis_type: a
         for a in db.query(Analysis).filter_by(report_id=report.id).all()
     }
-    for atype in ANALYSIS_TYPES:
-        _reset_or_create_analysis(
-            db, report.company_id, report.id, atype, existing_map.get(atype)
-        )
+    _queue_report_types(db, report, existing_by_type, skip_completed=False)
     db.commit()
 
     enqueue(report.id)  # 중복 투입은 enqueue 내부에서 무시
@@ -96,23 +106,21 @@ def analyze_all(company_id: int, db: Session = Depends(get_db)):
         Report.file_path.isnot(None),
     ).all()
 
-    # 기업의 모든 분석을 1회 로드 → (report_id, type) 조회로 N+1 제거
-    existing_map = {
-        (a.report_id, a.analysis_type): a
-        for a in db.query(Analysis).filter_by(company_id=company.id).all()
-    }
+    # 기업의 모든 분석을 1회 로드(대용량 결과 컬럼은 defer) → report_id별 dict로 N+1 제거
+    by_report: dict[int, dict] = defaultdict(dict)
+    for a in (
+        db.query(Analysis)
+        .filter_by(company_id=company.id)
+        .options(defer(Analysis.result_json), defer(Analysis.result_summary))
+        .all()
+    ):
+        by_report[a.report_id][a.analysis_type] = a
 
-    report_ids_to_queue = []
-    for report in reports:
-        has_pending = False
-        for atype in ANALYSIS_TYPES:
-            existing = existing_map.get((report.id, atype))
-            if existing and existing.status == AnalysisStatus.COMPLETED:
-                continue
-            _reset_or_create_analysis(db, company.id, report.id, atype, existing)
-            has_pending = True
-        if has_pending:
-            report_ids_to_queue.append(report.id)
+    report_ids_to_queue = [
+        report.id
+        for report in reports
+        if _queue_report_types(db, report, by_report.get(report.id, {}), skip_completed=True)
+    ]
 
     db.commit()  # 워커가 미커밋 상태를 읽지 않도록 enqueue 전에 커밋
     for rid in report_ids_to_queue:
