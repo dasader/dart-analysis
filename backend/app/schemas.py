@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from datetime import datetime, date
 
+from app.constants import AnalysisType
+
 
 # --- Tag ---
 
@@ -80,7 +82,7 @@ class ReportResponse(BaseModel):
 # --- Analysis ---
 
 class AnalysisRequest(BaseModel):
-    analysis_type: str  # subsidiary | rnd | national_tech
+    analysis_type: AnalysisType
 
 class AnalysisResponse(BaseModel):
     id: int
@@ -98,9 +100,13 @@ class AnalysisResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RunningInfo(BaseModel):
+    report_id: int
+
+
 class QueueStatus(BaseModel):
     pending_count: int
-    running: dict | None  # 현재 처리 중인 분석 정보
+    running: RunningInfo | None = None  # 현재 처리 중인 보고서
 
 
 # --- Scheduler ---

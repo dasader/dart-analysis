@@ -4,16 +4,15 @@ import { fetchCompanies, deleteCompany, fetchTags } from "../api/client";
 import CompanyForm from "../components/CompanyForm";
 import CompanyEditModal from "../components/CompanyEditModal";
 import TagChip from "../components/TagChip";
+import { useSort, SortIcon } from "../hooks/useSort";
 import type { Company, Tag } from "../types";
 
 type SortKey = "corp_name" | "corp_code" | "report_count" | "latest_analysis_date";
-type SortDir = "asc" | "desc";
 
 export default function CompanyList() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("corp_name");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const { sortKey, sortDir, toggleSort, compare } = useSort<SortKey>("corp_name", "asc");
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,16 +40,6 @@ export default function CompanyList() {
     load(newIds);
   };
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir("asc"); }
-  };
-
-  const SortIcon = ({ col }: { col: SortKey }) => {
-    if (sortKey !== col) return <span className="ml-1 opacity-30">↕</span>;
-    return <span className="ml-1">{sortDir === "asc" ? "↑" : "↓"}</span>;
-  };
-
   const filtered = companies
     .filter((c) =>
       c.corp_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -62,9 +51,7 @@ export default function CompanyList() {
       else if (sortKey === "corp_code") { av = a.corp_code; bv = b.corp_code; }
       else if (sortKey === "report_count") { av = a.report_count; bv = b.report_count; }
       else { av = a.latest_analysis_date ?? ""; bv = b.latest_analysis_date ?? ""; }
-      if (av < bv) return sortDir === "asc" ? -1 : 1;
-      if (av > bv) return sortDir === "asc" ? 1 : -1;
-      return 0;
+      return compare(av, bv);
     });
 
   const handleDelete = async (c: Company) => {
@@ -73,31 +60,19 @@ export default function CompanyList() {
     load();
   };
 
+  // 상태 → 뱃지 텍스트·색상 (마크업은 1곳으로 통일)
+  const statusBadge = (c: Company): { label: string; className: string } => {
+    if (!c.is_active) return { label: "비활성", className: "bg-gray-100 text-text-tertiary" };
+    if (c.latest_analysis_date) return { label: "분석완료", className: "bg-success-bg text-success" };
+    if (c.report_count > 0) return { label: "보고서만", className: "bg-warning-bg text-warning" };
+    return { label: "대기", className: "bg-gray-100 text-text-tertiary" };
+  };
+
   const getStatusBadge = (c: Company) => {
-    if (!c.is_active) {
-      return (
-        <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-text-tertiary">
-          비활성
-        </span>
-      );
-    }
-    if (c.latest_analysis_date) {
-      return (
-        <span className="inline-flex items-center rounded-full bg-success-bg px-2.5 py-0.5 text-xs font-medium text-success">
-          분석완료
-        </span>
-      );
-    }
-    if (c.report_count > 0) {
-      return (
-        <span className="inline-flex items-center rounded-full bg-warning-bg px-2.5 py-0.5 text-xs font-medium text-warning">
-          보고서만
-        </span>
-      );
-    }
+    const { label, className } = statusBadge(c);
     return (
-      <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-text-tertiary">
-        대기
+      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${className}`}>
+        {label}
       </span>
     );
   };
@@ -170,25 +145,25 @@ export default function CompanyList() {
                 className="cursor-pointer px-6 py-3.5 text-left font-semibold text-text-secondary hover:text-text-primary"
                 onClick={() => toggleSort("corp_name")}
               >
-                기업명<SortIcon col="corp_name" />
+                기업명<SortIcon active={sortKey === "corp_name"} dir={sortDir} />
               </th>
               <th
                 className="cursor-pointer px-6 py-3.5 text-left font-semibold text-text-secondary hover:text-text-primary"
                 onClick={() => toggleSort("corp_code")}
               >
-                종목코드<SortIcon col="corp_code" />
+                종목코드<SortIcon active={sortKey === "corp_code"} dir={sortDir} />
               </th>
               <th
                 className="cursor-pointer px-6 py-3.5 text-center font-semibold text-text-secondary hover:text-text-primary"
                 onClick={() => toggleSort("report_count")}
               >
-                보고서<SortIcon col="report_count" />
+                보고서<SortIcon active={sortKey === "report_count"} dir={sortDir} />
               </th>
               <th
                 className="cursor-pointer px-6 py-3.5 text-left font-semibold text-text-secondary hover:text-text-primary"
                 onClick={() => toggleSort("latest_analysis_date")}
               >
-                최근 분석<SortIcon col="latest_analysis_date" />
+                최근 분석<SortIcon active={sortKey === "latest_analysis_date"} dir={sortDir} />
               </th>
               <th className="px-6 py-3.5 text-center font-semibold text-text-secondary">상태</th>
               <th className="px-6 py-3.5 text-right font-semibold text-text-secondary">작업</th>

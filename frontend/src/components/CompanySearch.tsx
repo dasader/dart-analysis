@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { searchCompanies } from "../api/client";
+import { getErrorMessage } from "../lib/errors";
 import type { CompanySearchResult } from "../types";
 
 interface Props {
@@ -19,8 +20,8 @@ export default function CompanySearch({ onSelect }: Props) {
     try {
       const data = await searchCompanies(query);
       setResults(data);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }

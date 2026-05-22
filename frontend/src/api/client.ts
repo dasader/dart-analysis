@@ -79,12 +79,6 @@ export function downloadReports(
   });
 }
 
-export function checkNewReports(
-  companyId: number,
-): Promise<{ new_count: number; reports: Record<string, string>[] }> {
-  return request(`/companies/${companyId}/reports/check`);
-}
-
 export function deleteReport(reportId: number): Promise<void> {
   return request(`/reports/${reportId}`, { method: "DELETE" });
 }
@@ -93,31 +87,7 @@ export function redownloadReport(reportId: number): Promise<Report> {
   return request(`/reports/${reportId}/redownload`, { method: "POST" });
 }
 
-export function fetchReportContent(
-  reportId: number,
-): Promise<{ report_id: number; content: string }> {
-  return request(`/reports/${reportId}/content`);
-}
-
 // --- Analyses ---
-
-export function runAnalysis(
-  reportId: number,
-  analysisType: string,
-): Promise<Analysis> {
-  return request(`/reports/${reportId}/analyze`, {
-    method: "POST",
-    body: JSON.stringify({ analysis_type: analysisType }),
-  });
-}
-
-export function fetchReportAnalyses(reportId: number): Promise<Analysis[]> {
-  return request(`/reports/${reportId}/analyses`);
-}
-
-export function fetchAnalysis(analysisId: number): Promise<Analysis> {
-  return request(`/analyses/${analysisId}`);
-}
 
 export function fetchCompanyAnalyses(companyId: number): Promise<Analysis[]> {
   return request(`/companies/${companyId}/analyses`);
@@ -135,31 +105,16 @@ export function analyzeAll(
   return request(`/companies/${companyId}/analyze-all`, { method: "POST" });
 }
 
-export function fetchQueueStatus(): Promise<{
-  pending_count: number;
-  running: { analysis_id: number } | null;
-}> {
-  return request("/queue/status");
-}
-
 // --- Scheduler ---
 
 export function fetchSchedulerStatus(): Promise<SchedulerStatus> {
   return request("/scheduler/status");
 }
 
-export function runSchedulerNow(): Promise<{ message: string }> {
-  return request("/scheduler/run-now", { method: "POST" });
-}
-
 // --- Prompts ---
 
 export function fetchPrompts(): Promise<PromptTemplate[]> {
   return request("/prompts");
-}
-
-export function fetchPrompt(analysisType: string): Promise<PromptTemplate> {
-  return request(`/prompts/${analysisType}`);
 }
 
 export function updatePrompt(

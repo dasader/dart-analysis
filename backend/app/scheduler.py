@@ -1,14 +1,12 @@
-from datetime import datetime, date
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import settings
+from app.constants import REPORT_TYPE_ANNUAL
 from app.database import SessionLocal
-from app.models import Company
-from app.services.dart_client import list_reports, extract_fiscal_year_from_name
-from app.services.report_service import download_and_extract
-from app.models import Report
+from app.models import Company, Report
+from app.services.dart_client import list_reports, parse_filing_date
+from app.services.report_service import create_report_from_dart
 
 scheduler = AsyncIOScheduler()
 
@@ -29,7 +27,7 @@ async def check_and_download_reports():
                     db.query(Report)
                     .filter(
                         Report.company_id == company.id,
-                        Report.report_type == "사업보고서",
+                        Report.report_type == REPORT_TYPE_ANNUAL,
                     )
                     .all()
                 )
@@ -49,34 +47,10 @@ async def check_and_download_reports():
                     if dr["rcept_no"] in existing_rcepts:
                         continue
 
-                    filing_str = dr.get("filing_date")
-                    # 보고서명에서 사업연도 추출, 없으면 max_year+1 사용
-                    fiscal_year = (
-                        extract_fiscal_year_from_name(dr["report_name"])
-                        or (int(filing_str[:4]) if filing_str else max_year + 1)
-                    )
-                    filing_date = (
-                        date(int(filing_str[:4]), int(filing_str[4:6]), int(filing_str[6:8]))
-                        if filing_str
-                        else None
-                    )
-
-                    file_path = await download_and_extract(
-                        company.corp_code, dr["rcept_no"], fiscal_year
-                    )
-
-                    report = Report(
-                        company_id=company.id,
-                        rcept_no=dr["rcept_no"],
-                        report_name=dr["report_name"],
-                        report_type=dr["report_type"],
-                        fiscal_year=fiscal_year,
-                        filing_date=filing_date,
-                        file_path=file_path,
-                        downloaded_at=datetime.utcnow(),
-                    )
-                    db.add(report)
-                    db.commit()
+                    # 보고서명에 연도가 없으면 공시 연도, 그것도 없으면 max_year+1
+                    filing = parse_filing_date(dr.get("filing_date"))
+                    fallback_year = filing.year if filing else max_year + 1
+                    await create_report_from_dart(db, company, dr, fallback_year)
             except Exception:
                 continue
     finally:

@@ -44,12 +44,30 @@ export interface Report {
   analysis_count: number;
 }
 
+export const ANALYSIS_TYPE_KEYS = ["subsidiary", "rnd", "national_tech"] as const;
+export type AnalysisType = (typeof ANALYSIS_TYPE_KEYS)[number];
+export type AnalysisStatus = "pending" | "running" | "completed" | "failed";
+
+// 화면 탭/헤더용 라벨
+export const ANALYSIS_TYPE_LABELS: Record<AnalysisType, string> = {
+  subsidiary: "종속회사 변동 분석",
+  rnd: "R&D/투자 분석",
+  national_tech: "국가전략기술 분석",
+};
+
+// 인쇄용 전체 명칭
+export const PRINT_TYPE_LABELS: Record<AnalysisType, string> = {
+  subsidiary: "연결대상 종속회사 변동 분석",
+  rnd: "연구개발 및 투자 분석",
+  national_tech: "국가전략기술 관련 분석",
+};
+
 export interface Analysis {
   id: number;
   company_id: number;
   report_id: number;
-  analysis_type: "subsidiary" | "rnd" | "national_tech";
-  status: "pending" | "running" | "completed" | "failed";
+  analysis_type: AnalysisType;
+  status: AnalysisStatus;
   result_json: string | null;
   result_summary: string | null;
   error_message: string | null;

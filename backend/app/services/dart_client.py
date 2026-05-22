@@ -1,22 +1,46 @@
+import asyncio
 import io
 import re
+import time
 import zipfile
 import xml.etree.ElementTree as ET
+from datetime import date, datetime
 
 import httpx
 
 from app.config import settings
+from app.constants import REPORT_TYPE_ANNUAL
 
 DART_BASE = "https://opendart.fss.or.kr/api"
 CORP_CODE_URL = "https://opendart.fss.or.kr/api/corpCode.xml"
 
+# corpCode.xml은 전체 기업 목록(수 MB)이라 거의 변하지 않음 → 파싱 결과를 캐시
+_CORP_CACHE_TTL = 24 * 3600
+_corp_cache: list[dict] | None = None
+_corp_cache_at: float = 0.0
 
-async def search_companies(name: str) -> list[dict]:
-    """OpenDART corpCode.xml을 다운로드하여 기업명으로 검색.
 
-    corpCode.xml은 전체 기업 목록이 담긴 ZIP 파일.
-    ZIP 안의 CORPCODE.xml을 파싱하여 name이 포함된 기업을 반환.
-    """
+def _parse_corp_zip(content: bytes) -> list[dict]:
+    """corpCode.xml ZIP을 파싱해 전체 기업 목록을 반환 (블로킹 — executor에서 실행)."""
+    with zipfile.ZipFile(io.BytesIO(content)) as zf:
+        root = ET.fromstring(zf.read("CORPCODE.xml"))
+    return [
+        {
+            "corp_code": item.findtext("corp_code", ""),
+            "corp_name": item.findtext("corp_name", ""),
+            "stock_code": item.findtext("stock_code", "") or None,
+        }
+        for item in root.iter("list")
+    ]
+
+
+async def _load_corp_list() -> list[dict]:
+    """전체 기업 목록을 캐시에서 반환. 만료 시에만 다운로드·파싱."""
+    global _corp_cache, _corp_cache_at
+    now = time.monotonic()
+    if _corp_cache is not None and now - _corp_cache_at < _CORP_CACHE_TTL:
+        return _corp_cache
+
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(
             CORP_CODE_URL,
@@ -24,20 +48,19 @@ async def search_companies(name: str) -> list[dict]:
         )
         resp.raise_for_status()
 
-    zf = zipfile.ZipFile(io.BytesIO(resp.content))
-    xml_content = zf.read("CORPCODE.xml")
-    root = ET.fromstring(xml_content)
+    loop = asyncio.get_running_loop()
+    corps = await loop.run_in_executor(None, _parse_corp_zip, resp.content)
+    _corp_cache = corps
+    _corp_cache_at = now
+    return corps
 
-    results = []
-    for item in root.iter("list"):
-        corp_name = item.findtext("corp_name", "")
-        if name.lower() in corp_name.lower():
-            results.append({
-                "corp_code": item.findtext("corp_code", ""),
-                "corp_name": corp_name,
-                "stock_code": item.findtext("stock_code", "") or None,
-            })
-    return results[:50]
+
+async def search_companies(name: str) -> list[dict]:
+    """전체 기업 목록(캐시)에서 name이 포함된 기업을 최대 50건 반환."""
+    needle = name.lower()
+    corps = await _load_corp_list()
+    matched = [c for c in corps if needle in c["corp_name"].lower()]
+    return matched[:50]
 
 
 async def list_reports(
@@ -94,9 +117,19 @@ def _classify_report(name: str) -> str | None:
     """
     if "정정" in name:
         return None
-    if "사업보고서" in name:
-        return "사업보고서"
+    if REPORT_TYPE_ANNUAL in name:
+        return REPORT_TYPE_ANNUAL
     return None
+
+
+def parse_filing_date(filing_str: str | None) -> date | None:
+    """DART 접수일자(YYYYMMDD 문자열)를 date로 변환. 형식이 어긋나면 None."""
+    if not filing_str:
+        return None
+    try:
+        return datetime.strptime(filing_str, "%Y%m%d").date()
+    except ValueError:
+        return None
 
 
 def extract_fiscal_year_from_name(report_name: str) -> int | None:

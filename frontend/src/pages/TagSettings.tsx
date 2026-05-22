@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchTags, createTag, updateTag, deleteTag } from "../api/client";
 import TagChip from "../components/TagChip";
+import { getErrorMessage } from "../lib/errors";
 import type { Tag } from "../types";
 import { TAG_COLORS } from "../types";
 
@@ -25,8 +26,8 @@ export default function TagSettings() {
       setNewName("");
       setNewColor(TAG_COLORS[0]);
       load();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
+    } catch (e) {
+      setError(getErrorMessage(e));
     }
   };
 
@@ -44,8 +45,8 @@ export default function TagSettings() {
       await updateTag(id, { name: editName.trim(), color: editColor });
       setEditId(null);
       load();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
+    } catch (e) {
+      setError(getErrorMessage(e));
     }
   };
 
@@ -54,8 +55,8 @@ export default function TagSettings() {
     try {
       await deleteTag(tag.id);
       load();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
+    } catch (e) {
+      setError(getErrorMessage(e));
     }
   };
 

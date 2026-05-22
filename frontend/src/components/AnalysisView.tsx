@@ -2,31 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { analyzeReport } from "../api/client";
-import type { Analysis, Report } from "../types";
+import { getErrorMessage } from "../lib/errors";
+import {
+  ANALYSIS_TYPE_KEYS,
+  ANALYSIS_TYPE_LABELS,
+  PRINT_TYPE_LABELS,
+} from "../types";
+import type { Analysis, AnalysisType, Report } from "../types";
 
 interface Props {
   companyId: number;
   companyName: string;
   reports: Report[];
   analyses: Analysis[];
-  analysisType: "subsidiary" | "rnd" | "national_tech";
+  analysisType: AnalysisType;
   onRefresh: () => void;
 }
-
-const TYPE_LABELS: Record<string, string> = {
-  subsidiary: "종속회사 변동 분석",
-  rnd: "R&D/투자 분석",
-  national_tech: "국가전략기술 분석",
-};
-
-// 인쇄용 전체 명칭
-const PRINT_TYPE_LABELS: Record<string, string> = {
-  subsidiary: "연결대상 종속회사 변동 분석",
-  rnd: "연구개발 및 투자 분석",
-  national_tech: "국가전략기술 관련 분석",
-};
-
-const PRINT_TYPE_ORDER = ["subsidiary", "rnd", "national_tech"] as const;
 
 const STATUS_LABELS: Record<string, { text: string; color: string }> = {
   pending: { text: "대기중", color: "text-text-tertiary bg-gray-100" },
@@ -89,17 +80,14 @@ export default function AnalysisView({
     ),
   ].sort((a, b) => b - a);
 
-  const [selectedYear, setSelectedYear] = useState<number | null>(
-    years[0] ?? null,
-  );
+  // 사용자가 고른 연도만 보관하고, 실제 표시 연도는 매 렌더 파생 (보정용 effect 불필요)
+  const [userSelectedYear, setUserSelectedYear] = useState<number | null>(null);
   const [runningId, setRunningId] = useState<number | null>(null);
 
-  // years 목록이 바뀌었을 때 selectedYear가 null이거나 목록에 없으면 자동 선택
-  useEffect(() => {
-    if (years.length > 0 && (selectedYear === null || !years.includes(selectedYear))) {
-      setSelectedYear(years[0]);
-    }
-  }, [years, selectedYear]);
+  const selectedYear =
+    userSelectedYear !== null && years.includes(userSelectedYear)
+      ? userSelectedYear
+      : years[0] ?? null;
 
   const selectedReport = reports.find((r) => r.fiscal_year === selectedYear);
   const selectedAnalysis = relevantAnalyses.find(
@@ -108,7 +96,7 @@ export default function AnalysisView({
 
   // 인쇄용: 선택된 연도의 완료된 3가지 분석을 고정 순서로
   const printAnalyses = selectedReport
-    ? (PRINT_TYPE_ORDER
+    ? (ANALYSIS_TYPE_KEYS
         .map((type) =>
           analyses.find(
             (a) =>
@@ -134,8 +122,8 @@ export default function AnalysisView({
     try {
       await analyzeReport(reportId);
       onRefresh();
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e) {
+      alert(getErrorMessage(e));
     } finally {
       setRunningId(null);
     }
@@ -147,13 +135,98 @@ export default function AnalysisView({
       !relevantAnalyses.some((a) => a.report_id === r.id),
   );
 
+  // 선택된 분석 상태에 따른 본문 (중첩 삼항 대신 early return으로 평탄화)
+  const renderContent = () => {
+    if (selectedAnalysis?.status === "completed") {
+      return (
+        <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
+          <div className="mb-4 flex items-center gap-3 border-b border-border pb-4">
+            <span className="text-xs text-text-tertiary">
+              분석일:{" "}
+              {new Date(selectedAnalysis.updated_at).toLocaleDateString("ko-KR")}
+            </span>
+          </div>
+          <article className={PROSE_CLASSES}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {selectedAnalysis.result_summary || ""}
+            </ReactMarkdown>
+          </article>
+        </div>
+      );
+    }
+
+    if (
+      selectedAnalysis &&
+      (selectedAnalysis.status === "pending" || selectedAnalysis.status === "running")
+    ) {
+      return (
+        <div className="flex flex-col items-center rounded-xl border border-border bg-surface py-16">
+          <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent" />
+          <p className="text-sm text-text-secondary">
+            {selectedAnalysis.status === "pending"
+              ? "큐에서 대기 중입니다..."
+              : "Gemini가 보고서를 분석하고 있습니다..."}
+          </p>
+          <p className="mt-1 text-xs text-text-tertiary">
+            이 페이지를 벗어나도 분석은 계속 진행됩니다.
+          </p>
+        </div>
+      );
+    }
+
+    if (selectedAnalysis?.status === "failed") {
+      return (
+        <div className="rounded-xl border border-danger/30 bg-danger-bg p-6">
+          <p className="mb-2 font-medium text-danger">분석 실패</p>
+          <p className="text-sm text-text-secondary">
+            {selectedAnalysis.error_message}
+          </p>
+          <button
+            onClick={() => handleRun(selectedAnalysis.report_id)}
+            className="btn btn-action mt-4"
+          >
+            재시도
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-xl border border-border bg-surface py-16 text-center">
+        {unanalyzedReports.length > 0 ? (
+          <div>
+            <p className="mb-4 text-sm text-text-tertiary">
+              아직 이 유형의 분석이 수행되지 않았습니다.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {unanalyzedReports.map((r) => (
+                <button
+                  key={r.id}
+                  disabled={runningId === r.id}
+                  onClick={() => handleRun(r.id)}
+                  className="btn btn-action"
+                >
+                  {runningId === r.id ? "요청 중..." : `${r.fiscal_year} ${r.report_type} 분석`}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-text-tertiary">
+            보고서를 먼저 다운로드해주세요.
+          </p>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div>
       {/* ───── 화면 UI (인쇄 제외) ───── */}
       <div className="no-print">
         <div className="mb-6 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-navy">
-            {TYPE_LABELS[analysisType]}
+            {ANALYSIS_TYPE_LABELS[analysisType]}
           </h3>
           <div className="flex items-center gap-3">
             {hasActiveJob && (
@@ -197,7 +270,7 @@ export default function AnalysisView({
               return (
                 <button
                   key={y}
-                  onClick={() => setSelectedYear(y)}
+                  onClick={() => setUserSelectedYear(y)}
                   className={selectedYear === y ? "chip chip-active" : "chip"}
                 >
                   {y}
@@ -215,74 +288,7 @@ export default function AnalysisView({
         )}
 
         {/* Analysis Content */}
-        {selectedAnalysis && selectedAnalysis.status === "completed" ? (
-          <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
-            <div className="mb-4 flex items-center gap-3 border-b border-border pb-4">
-              <span className="text-xs text-text-tertiary">
-                분석일:{" "}
-                {new Date(selectedAnalysis.updated_at).toLocaleDateString("ko-KR")}
-              </span>
-            </div>
-            <article className={PROSE_CLASSES}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {selectedAnalysis.result_summary || ""}
-              </ReactMarkdown>
-            </article>
-          </div>
-        ) : selectedAnalysis &&
-          (selectedAnalysis.status === "pending" ||
-            selectedAnalysis.status === "running") ? (
-          <div className="flex flex-col items-center rounded-xl border border-border bg-surface py-16">
-            <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent" />
-            <p className="text-sm text-text-secondary">
-              {selectedAnalysis.status === "pending"
-                ? "큐에서 대기 중입니다..."
-                : "Gemini가 보고서를 분석하고 있습니다..."}
-            </p>
-            <p className="mt-1 text-xs text-text-tertiary">
-              이 페이지를 벗어나도 분석은 계속 진행됩니다.
-            </p>
-          </div>
-        ) : selectedAnalysis && selectedAnalysis.status === "failed" ? (
-          <div className="rounded-xl border border-danger/30 bg-danger-bg p-6">
-            <p className="mb-2 font-medium text-danger">분석 실패</p>
-            <p className="text-sm text-text-secondary">
-              {selectedAnalysis.error_message}
-            </p>
-            <button
-              onClick={() => handleRun(selectedAnalysis.report_id)}
-              className="btn btn-action mt-4"
-            >
-              재시도
-            </button>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-border bg-surface py-16 text-center">
-            {unanalyzedReports.length > 0 ? (
-              <div>
-                <p className="mb-4 text-sm text-text-tertiary">
-                  아직 이 유형의 분석이 수행되지 않았습니다.
-                </p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {unanalyzedReports.map((r) => (
-                    <button
-                      key={r.id}
-                      disabled={runningId === r.id}
-                      onClick={() => handleRun(r.id)}
-                      className="btn btn-action"
-                    >
-                      {runningId === r.id ? "요청 중..." : `${r.fiscal_year} ${r.report_type} 분석`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-text-tertiary">
-                보고서를 먼저 다운로드해주세요.
-              </p>
-            )}
-          </div>
-        )}
+        {renderContent()}
       </div>
 
       {/* ───── 인쇄 전용 통합 보고서 ───── */}

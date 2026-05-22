@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   fetchCompany,
@@ -17,6 +17,7 @@ import ReportTable from "../components/ReportTable";
 import DownloadModal from "../components/DownloadModal";
 import AnalysisView from "../components/AnalysisView";
 import TagChip from "../components/TagChip";
+import { getErrorMessage } from "../lib/errors";
 import type { Company, Report, Analysis, Tag } from "../types";
 
 const TABS = [
@@ -27,6 +28,19 @@ const TABS = [
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
+
+// 폴링 시 분석 상태가 실제로 바뀌었을 때만 setState 하기 위한 비교
+function analysesEqual(a: Analysis[], b: Analysis[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (x, i) =>
+        x.id === b[i].id &&
+        x.status === b[i].status &&
+        x.updated_at === b[i].updated_at,
+    )
+  );
+}
 
 export default function CompanyDetail() {
   const { id } = useParams<{ id: string }>();
@@ -48,7 +62,7 @@ export default function CompanyDetail() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const [companyData, reps, anals, tags] = await Promise.all([
       fetchCompany(companyId).catch(() => null),
       fetchReports(companyId),
@@ -59,11 +73,17 @@ export default function CompanyDetail() {
     setReports(reps);
     setAnalyses(anals);
     setAllTags(tags);
-  };
+  }, [companyId]);
+
+  // 폴링 전용: 변하지 않는 회사/보고서/태그는 건너뛰고 분석 상태만 갱신
+  const refreshAnalyses = useCallback(async () => {
+    const next = await fetchCompanyAnalyses(companyId);
+    setAnalyses((prev) => (analysesEqual(prev, next) ? prev : next));
+  }, [companyId]);
 
   useEffect(() => {
     load();
-  }, [companyId]);
+  }, [load]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -86,8 +106,8 @@ export default function CompanyDetail() {
       const updated = await assignTag(companyId, tagId);
       setCompany(updated);
       setShowTagDropdown(false);
-    } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
+    } catch (e) {
+      showToast(getErrorMessage(e), "err");
     }
   };
 
@@ -95,8 +115,8 @@ export default function CompanyDetail() {
     try {
       const updated = await removeCompanyTag(companyId, tagId);
       setCompany(updated);
-    } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
+    } catch (e) {
+      showToast(getErrorMessage(e), "err");
     }
   };
 
@@ -184,7 +204,7 @@ export default function CompanyDetail() {
                   showToast(result.message);
                   load();
                 } catch (e: unknown) {
-                  showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
+                  showToast(getErrorMessage(e), "err");
                 } finally {
                   setAnalyzing(false);
                 }
@@ -249,7 +269,7 @@ export default function CompanyDetail() {
               load();
               setTab("subsidiary");
             } catch (e: unknown) {
-              showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
+              showToast(getErrorMessage(e), "err");
             } finally {
               setAnalyzing(false);
             }
@@ -262,7 +282,7 @@ export default function CompanyDetail() {
               showToast("보고서가 삭제되었습니다.");
               load();
             } catch (e: unknown) {
-              showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
+              showToast(getErrorMessage(e), "err");
             }
           }}
           onRedownload={async (reportId) => {
@@ -277,7 +297,7 @@ export default function CompanyDetail() {
               showToast("보고서 파일을 재다운로드했습니다. 기존 분석 결과가 삭제되었습니다.");
               load();
             } catch (e: unknown) {
-              showToast(e instanceof Error ? e.message : "오류가 발생했습니다.", "err");
+              showToast(getErrorMessage(e), "err");
             }
           }}
         />
@@ -290,7 +310,7 @@ export default function CompanyDetail() {
           reports={reports}
           analyses={analyses}
           analysisType={tab}
-          onRefresh={load}
+          onRefresh={refreshAnalyses}
         />
       )}
 

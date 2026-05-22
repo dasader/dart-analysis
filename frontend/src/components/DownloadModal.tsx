@@ -1,5 +1,7 @@
 import { useState } from "react";
+import Modal from "./Modal";
 import { downloadReports } from "../api/client";
+import { getErrorMessage } from "../lib/errors";
 
 interface Props {
   open: boolean;
@@ -28,29 +30,16 @@ export default function DownloadModal({
       await downloadReports(companyId, { fiscal_year: year });
       onDownloaded();
       onClose();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-text-primary">
-            보고서 다운로드
-          </h2>
-          <button
-            onClick={onClose}
-            className="btn-close"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="space-y-4">
+    <Modal title="보고서 다운로드" onClose={onClose}>
+      <div className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-text-secondary">
               사업연도
@@ -92,7 +81,6 @@ export default function DownloadModal({
             {loading ? "다운로드 중..." : "다운로드 시작"}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

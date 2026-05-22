@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Report } from "../types";
+import { ANALYSIS_TYPE_KEYS } from "../types";
+import { useSort, SortIcon } from "../hooks/useSort";
 
 interface Props {
   reports: Report[];
@@ -9,35 +11,20 @@ interface Props {
   onRedownload: (reportId: number) => void;
 }
 
-const ANALYSIS_TYPES = ["subsidiary", "rnd", "national_tech"];
-
 type SortKey = "filing_date" | "fiscal_year";
-type SortDir = "asc" | "desc";
 
 export default function ReportTable({ reports, analyzing = false, onAnalyze, onDelete, onRedownload }: Props) {
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>("fiscal_year");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const { sortKey, sortDir, toggleSort, compare } = useSort<SortKey>("fiscal_year", "desc");
 
   const sorted = useMemo(() => {
     return [...reports].sort((a, b) => {
       const av = sortKey === "filing_date" ? (a.filing_date ?? "") : a.fiscal_year;
       const bv = sortKey === "filing_date" ? (b.filing_date ?? "") : b.fiscal_year;
-      if (av < bv) return sortDir === "asc" ? -1 : 1;
-      if (av > bv) return sortDir === "asc" ? 1 : -1;
-      return 0;
+      return compare(av, bv);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reports, sortKey, sortDir]);
-
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir("desc"); }
-  };
-
-  const SortIcon = ({ col }: { col: SortKey }) => {
-    if (sortKey !== col) return <span className="ml-1 opacity-30">↕</span>;
-    return <span className="ml-1">{sortDir === "asc" ? "↑" : "↓"}</span>;
-  };
 
   if (reports.length === 0) {
     return (
@@ -70,13 +57,13 @@ export default function ReportTable({ reports, analyzing = false, onAnalyze, onD
                   className="cursor-pointer px-5 py-3 text-center font-semibold text-text-secondary hover:text-text-primary"
                   onClick={() => toggleSort("fiscal_year")}
                 >
-                  사업연도<SortIcon col="fiscal_year" />
+                  사업연도<SortIcon active={sortKey === "fiscal_year"} dir={sortDir} />
                 </th>
                 <th
                   className="cursor-pointer px-5 py-3 text-left font-semibold text-text-secondary hover:text-text-primary"
                   onClick={() => toggleSort("filing_date")}
                 >
-                  공시일<SortIcon col="filing_date" />
+                  공시일<SortIcon active={sortKey === "filing_date"} dir={sortDir} />
                 </th>
                 <th className="px-5 py-3 text-center font-semibold text-text-secondary">
                   분석
@@ -120,7 +107,7 @@ export default function ReportTable({ reports, analyzing = false, onAnalyze, onD
                     {r.filing_date || "—"}
                   </td>
                   <td className="px-5 py-3.5 text-center">
-                    {r.analysis_count >= ANALYSIS_TYPES.length ? (
+                    {r.analysis_count >= ANALYSIS_TYPE_KEYS.length ? (
                       <span className="inline-flex items-center gap-1 text-xs text-success">
                         <span>●</span> 완료
                       </span>

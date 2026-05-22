@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchPrompts, updatePrompt } from "../api/client";
+import { getErrorMessage } from "../lib/errors";
 import type { PromptTemplate } from "../types";
 
 export default function PromptSettings() {
@@ -38,8 +39,8 @@ export default function PromptSettings() {
       await updatePrompt(analysisType, edit);
       setSaved(analysisType);
       setTimeout(() => setSaved(null), 2000);
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e) {
+      alert(getErrorMessage(e));
     } finally {
       setSaving(null);
     }

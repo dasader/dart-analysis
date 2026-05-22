@@ -1,16 +1,16 @@
+import asyncio
 import json
 import logging
 import re
 
 from sqlalchemy.orm import Session
 
+from app.constants import AnalysisStatus
 from app.models import Analysis, PromptTemplate
 from app.services.gemini_client import generate, MODEL_NAME
 from app.services.report_service import extract_text_from_report
 
 logger = logging.getLogger(__name__)
-
-VALID_TYPES = ["subsidiary", "rnd", "national_tech"]
 
 # Gemini 입력 한도 (한국어 ~1.65자/토큰 기준 안전 상한)
 MAX_CHARS = 1_400_000
@@ -36,7 +36,7 @@ async def run_combined_analysis(db: Session, report_id: int) -> None:
     """report_id에 대해 pending 상태인 분석들을 Gemini 1회 호출로 일괄 처리."""
     pending = (
         db.query(Analysis)
-        .filter(Analysis.report_id == report_id, Analysis.status == "pending")
+        .filter(Analysis.report_id == report_id, Analysis.status == AnalysisStatus.PENDING)
         .all()
     )
     if not pending:
@@ -48,12 +48,16 @@ async def run_combined_analysis(db: Session, report_id: int) -> None:
 
     # 모두 running으로 전환
     for a in pending:
-        a.status = "running"
+        a.status = AnalysisStatus.RUNNING
     db.commit()
 
     try:
-        # 보고서 텍스트 추출
-        report_text = _truncate(extract_text_from_report(report.file_path) or "")
+        # 보고서 텍스트 추출 (블로킹 → 스레드 풀에서 실행, 워커 루프 점유 방지)
+        loop = asyncio.get_running_loop()
+        raw_text = await loop.run_in_executor(
+            None, extract_text_from_report, report.file_path
+        )
+        report_text = _truncate(raw_text or "")
         if not report_text:
             raise ValueError("보고서 텍스트를 추출할 수 없습니다.")
 
@@ -65,14 +69,9 @@ async def run_combined_analysis(db: Session, report_id: int) -> None:
                 raise ValueError(f"프롬프트 템플릿이 없습니다: {atype}")
             templates[atype] = t
 
-        # ── 통합 시스템 프롬프트 ──────────────────────────────────────
-        type_labels = {
-            "subsidiary": "종속회사 변동 분석",
-            "rnd": "R&D/투자 분석",
-            "national_tech": "국가전략기술 분석",
-        }
+        # ── 통합 시스템 프롬프트 ── (라벨은 PromptTemplate.label 재사용)
         sections = "\n\n".join(
-            f"## [{type_labels[t]}] 분석 지침\n{templates[t].system_prompt}"
+            f"## [{templates[t].label}] 분석 지침\n{templates[t].system_prompt}"
             for t in types_to_run
         )
         keys_desc = ", ".join(f'"{t}"' for t in types_to_run)

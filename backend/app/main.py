@@ -28,8 +28,12 @@ async def lifespan(app: FastAPI):
     start_scheduler()
     worker_task = asyncio.create_task(queue_worker())
     yield
-    # 종료: 스케줄러 정지 + 큐 워커 취소
+    # 종료: 스케줄러 정지 + 큐 워커 취소 (취소 완료까지 대기)
     worker_task.cancel()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        pass
     shutdown_scheduler()
 
 

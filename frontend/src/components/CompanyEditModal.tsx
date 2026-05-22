@@ -1,5 +1,7 @@
 import { useState } from "react";
+import Modal from "./Modal";
 import { updateCompany } from "../api/client";
+import { getErrorMessage } from "../lib/errors";
 import type { Company } from "../types";
 
 interface Props {
@@ -29,22 +31,16 @@ export default function CompanyEditModal({ company, onClose, onUpdated }: Props)
       });
       onUpdated();
       onClose();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-xl">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-text-primary">기업 정보 수정</h2>
-          <button onClick={onClose} className="btn-close">✕</button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <Modal title="기업 정보 수정" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="mb-1.5 block text-xs font-medium text-text-secondary">
               기업명
@@ -103,7 +99,6 @@ export default function CompanyEditModal({ company, onClose, onUpdated }: Props)
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

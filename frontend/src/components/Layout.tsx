@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
-import { Link, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet } from "react-router-dom";
 import { fetchSchedulerStatus } from "../api/client";
 import type { SchedulerStatus } from "../types";
 
 export default function Layout() {
-  const location = useLocation();
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
 
+  // 스케줄러 가동 여부는 거의 변하지 않으므로 마운트 시 1회만 조회
   useEffect(() => {
     fetchSchedulerStatus().then(setScheduler).catch(() => {});
-  }, [location.pathname]);
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-background">

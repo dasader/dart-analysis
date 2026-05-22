@@ -1,6 +1,8 @@
 import { useState } from "react";
 import CompanySearch from "./CompanySearch";
+import Modal from "./Modal";
 import { createCompany } from "../api/client";
+import { getErrorMessage } from "../lib/errors";
 import type { CompanySearchResult } from "../types";
 
 interface Props {
@@ -26,41 +28,23 @@ export default function CompanyForm({ open, onClose, onCreated }: Props) {
       });
       onCreated();
       onClose();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-xl border border-border bg-surface p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-text-primary">
-            기업 등록
-          </h2>
-          <button
-            onClick={onClose}
-            className="btn-close"
-          >
-            ✕
-          </button>
-        </div>
+    <Modal title="기업 등록" onClose={onClose} widthClass="max-w-lg">
+      <p className="mb-4 text-sm text-text-secondary">
+        OpenDART에서 기업을 검색하고 선택하면 자동으로 등록됩니다.
+      </p>
 
-        <p className="mb-4 text-sm text-text-secondary">
-          OpenDART에서 기업을 검색하고 선택하면 자동으로 등록됩니다.
-        </p>
+      <CompanySearch onSelect={handleSelect} />
 
-        <CompanySearch onSelect={handleSelect} />
-
-        {loading && (
-          <p className="mt-3 text-sm text-text-secondary">등록 중...</p>
-        )}
-        {error && (
-          <p className="mt-3 text-sm text-danger">{error}</p>
-        )}
-      </div>
-    </div>
+      {loading && <p className="mt-3 text-sm text-text-secondary">등록 중...</p>}
+      {error && <p className="mt-3 text-sm text-danger">{error}</p>}
+    </Modal>
   );
 }
