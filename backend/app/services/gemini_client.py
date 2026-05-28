@@ -35,7 +35,7 @@ def _call_gemini(system_prompt: str, user_prompt: str, max_output_tokens: int) -
             system_instruction=system_prompt,
             temperature=0.3,
             max_output_tokens=max_output_tokens,
-            thinking_config=types.ThinkingConfig(thinking_budget=-1),
+            thinking_config=types.ThinkingConfig(thinking_level="high"),
         ),
     )
     return response.text or ""
