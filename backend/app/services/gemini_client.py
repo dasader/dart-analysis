@@ -34,7 +34,7 @@ def _call_gemini(system_prompt: str, user_prompt: str, max_output_tokens: int) -
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
             max_output_tokens=max_output_tokens,
-            thinking_config=types.ThinkingConfig(thinkingLevel=types.ThinkingLevel.HIGH),
+            thinking_config=types.ThinkingConfig(thinkingBudget=-1),
         ),
     )
     return response.text or ""
