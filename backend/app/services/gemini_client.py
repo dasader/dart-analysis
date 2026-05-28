@@ -19,7 +19,7 @@ def _get_client() -> genai.Client:
     return _client
 
 
-MODEL_NAME = "gemini-3-flash-preview"
+MODEL_NAME = "gemini-3.1-flash-lite"
 
 _MAX_RETRIES = 5
 

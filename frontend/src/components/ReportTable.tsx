@@ -80,17 +80,7 @@ export default function ReportTable({ reports, analyzing = false, onAnalyze, onD
                   className={`border-b border-border transition-colors last:border-b-0 hover:bg-background/30 ${isAmendment ? "opacity-60" : ""}`}
                 >
                   <td className="px-5 py-3.5 font-medium text-text-primary">
-                    {r.file_path ? (
-                      <a
-                        href={`/api/reports/${r.id}/download`}
-                        className="hover:text-accent hover:underline"
-                        title="클릭하여 보고서 ZIP 파일 다운로드"
-                      >
-                        {r.report_name}
-                      </a>
-                    ) : (
-                      <span className="text-text-tertiary">{r.report_name}</span>
-                    )}
+                    <span className={r.file_path ? "" : "text-text-tertiary"}>{r.report_name}</span>
                     {isAmendment && (
                       <span
                         className="ml-2 inline-flex rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning"

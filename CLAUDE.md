@@ -129,7 +129,7 @@ components/
 
 ### Gemini 모델 및 한도
 
-- 모델: `gemini-3-flash-preview`
+- 모델: `gemini-3.1-flash-lite`
 - TPM 한도: 2M tokens/min → `analysis_interval_secs=30` (보고서 간 최소 간격)
 - 입력 상한: 1,400,000자 (앞 80% + 뒤 20% 방식 트런케이션)
 - 출력 토큰: 분석 유형당 8,192 × 유형 수 (combined 시 최대 24,576)
