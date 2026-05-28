@@ -4,6 +4,7 @@ import re
 from functools import partial
 
 from google import genai
+from google.genai import types
 
 from app.config import settings
 
@@ -30,10 +31,11 @@ def _call_gemini(system_prompt: str, user_prompt: str, max_output_tokens: int) -
     response = client.models.generate_content(
         model=MODEL_NAME,
         contents=user_prompt,
-        config=genai.types.GenerateContentConfig(
+        config=types.GenerateContentConfig(
             system_instruction=system_prompt,
             temperature=0.3,
             max_output_tokens=max_output_tokens,
+            thinking_config=types.ThinkingConfig(thinking_budget=-1),
         ),
     )
     return response.text or ""
