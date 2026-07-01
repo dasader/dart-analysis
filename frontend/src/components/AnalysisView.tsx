@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { analyzeReport } from "../api/client";
+import AdminButton from "./AdminButton";
 import { getErrorMessage } from "../lib/errors";
 import {
   ANALYSIS_TYPE_KEYS,
@@ -191,12 +192,12 @@ export default function AnalysisView({
           <p className="text-sm text-text-secondary">
             {selectedAnalysis.error_message}
           </p>
-          <button
+          <AdminButton
             onClick={() => handleRun(selectedAnalysis.report_id)}
             className="btn btn-action mt-4"
           >
             재시도
-          </button>
+          </AdminButton>
         </div>
       );
     }
@@ -210,14 +211,14 @@ export default function AnalysisView({
             </p>
             <div className="flex flex-wrap justify-center gap-2">
               {unanalyzedReports.map((r) => (
-                <button
+                <AdminButton
                   key={r.id}
                   disabled={runningId === r.id}
                   onClick={() => handleRun(r.id)}
                   className="btn btn-action"
                 >
                   {runningId === r.id ? "요청 중..." : `${r.fiscal_year} ${r.report_type} 분석`}
-                </button>
+                </AdminButton>
               ))}
             </div>
           </div>
@@ -246,14 +247,14 @@ export default function AnalysisView({
               </span>
             )}
             {selectedReport && (
-              <button
+              <AdminButton
                 disabled={runningId === selectedReport.id}
                 onClick={() => handleRun(selectedReport.id, true)}
                 className="btn btn-outline btn-sm"
                 title="3가지 분석 항목을 Gemini 1회 호출로 일괄 재분석"
               >
                 {runningId === selectedReport.id ? "요청 중..." : "전체 재분석"}
-              </button>
+              </AdminButton>
             )}
             {printAnalyses.length > 0 && (
               <button
