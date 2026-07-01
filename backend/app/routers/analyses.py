@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models import Company, Report, Analysis
 from app.schemas import AnalysisRequest, AnalysisResponse, QueueStatus
 from app.services.analysis_queue import enqueue, get_queue_info
+from app.dependencies import require_admin
 
 router = APIRouter(tags=["analyses"])
 
@@ -52,7 +53,7 @@ def _queue_report_types(
     return has_pending
 
 
-@router.post("/api/reports/{report_id}/analyze", response_model=AnalysisResponse)
+@router.post("/api/reports/{report_id}/analyze", response_model=AnalysisResponse, dependencies=[Depends(require_admin)])
 def analyze_report(
     report_id: int,
     body: AnalysisRequest,
@@ -75,7 +76,7 @@ def analyze_report(
     return AnalysisResponse.model_validate(analysis)
 
 
-@router.post("/api/reports/{report_id}/analyze-all")
+@router.post("/api/reports/{report_id}/analyze-all", dependencies=[Depends(require_admin)])
 def analyze_report_all(report_id: int, db: Session = Depends(get_db)):
     """보고서의 모든 분석 유형(3종)을 pending으로 설정하고 report_id를 큐에 1회 투입."""
     report = get_or_404(db, Report, report_id, "보고서를 찾을 수 없습니다.")
@@ -96,7 +97,7 @@ def analyze_report_all(report_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/api/companies/{company_id}/analyze-all")
+@router.post("/api/companies/{company_id}/analyze-all", dependencies=[Depends(require_admin)])
 def analyze_all(company_id: int, db: Session = Depends(get_db)):
     """기업의 모든 보고서 × 3가지 유형을 일괄 요청. 보고서별로 1회씩 큐 투입."""
     company = get_or_404(db, Company, company_id, "기업을 찾을 수 없습니다.")

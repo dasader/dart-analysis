@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import PromptTemplate
 from app.schemas import PromptTemplateResponse, PromptTemplateUpdate
+from app.dependencies import require_admin
 
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 
@@ -25,7 +26,7 @@ def get_prompt(analysis_type: str, db: Session = Depends(get_db)):
     return _get_template_or_404(db, analysis_type)
 
 
-@router.put("/{analysis_type}", response_model=PromptTemplateResponse)
+@router.put("/{analysis_type}", response_model=PromptTemplateResponse, dependencies=[Depends(require_admin)])
 def update_prompt(
     analysis_type: str,
     body: PromptTemplateUpdate,

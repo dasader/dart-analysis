@@ -5,8 +5,11 @@ import ColorPicker from "../components/ColorPicker";
 import { getErrorMessage } from "../lib/errors";
 import type { Tag } from "../types";
 import { TAG_COLORS } from "../types";
+import AdminButton from "../components/AdminButton";
+import { useAdmin } from "../context/AdminContext";
 
 export default function TagSettings() {
+  const { isAdmin } = useAdmin();
   const [tags, setTags] = useState<Tag[]>([]);
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState<string>(TAG_COLORS[0]);
@@ -69,6 +72,12 @@ export default function TagSettings() {
           기업에 할당할 태그를 미리 정의합니다.
         </p>
       </div>
+
+      {!isAdmin && (
+        <div className="mb-6 rounded-lg border border-warning/40 bg-warning-bg px-4 py-3 text-sm text-warning">
+          관리 기능을 사용하려면 우측 상단에서 관리자 로그인이 필요합니다.
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 rounded-lg bg-danger-bg px-4 py-3 text-sm text-danger">
@@ -164,9 +173,9 @@ export default function TagSettings() {
                           <button onClick={() => startEdit(tag)} className="btn btn-text">
                             수정
                           </button>
-                          <button onClick={() => handleDelete(tag)} className="btn btn-text-danger">
+                          <AdminButton onClick={() => handleDelete(tag)} className="btn btn-text-danger">
                             삭제
-                          </button>
+                          </AdminButton>
                         </>
                       )}
                     </div>

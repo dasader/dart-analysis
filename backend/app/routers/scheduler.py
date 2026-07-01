@@ -1,8 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.config import settings
 from app.scheduler import scheduler, check_and_download_reports
 from app.schemas import SchedulerStatus
+from app.dependencies import require_admin
 
 router = APIRouter(prefix="/api/scheduler", tags=["scheduler"])
 
@@ -17,7 +18,7 @@ def get_status():
     )
 
 
-@router.post("/run-now")
+@router.post("/run-now", dependencies=[Depends(require_admin)])
 async def run_now():
     await check_and_download_reports()
     return {"message": "실행 완료"}

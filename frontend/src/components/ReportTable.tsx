@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { Report } from "../types";
 import { ANALYSIS_TYPE_KEYS } from "../types";
 import { useSort, SortIcon } from "../hooks/useSort";
+import AdminButton from "./AdminButton";
 
 interface Props {
   reports: Report[];
@@ -119,15 +120,15 @@ export default function ReportTable({ reports, analyzing = false, onAnalyze, onD
                           분석 불가
                         </span>
                       ) : (
-                        <button
+                        <AdminButton
                           disabled={analyzing || busyId === r.id}
                           onClick={() => onAnalyze(r.id)}
                           className="btn btn-link"
                         >
                           {analyzing ? "요청 중..." : "분석"}
-                        </button>
+                        </AdminButton>
                       )}
-                      <button
+                      <AdminButton
                         disabled={busyId === r.id}
                         onClick={async () => {
                           setBusyId(r.id);
@@ -138,14 +139,14 @@ export default function ReportTable({ reports, analyzing = false, onAnalyze, onD
                         title="파일 재다운로드"
                       >
                         {busyId === r.id ? "..." : "재다운로드"}
-                      </button>
-                      <button
+                      </AdminButton>
+                      <AdminButton
                         disabled={busyId === r.id}
                         onClick={() => onDelete(r.id)}
                         className="btn btn-text-danger"
                       >
                         삭제
-                      </button>
+                      </AdminButton>
                     </div>
                   </td>
                 </tr>

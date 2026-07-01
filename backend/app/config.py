@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     # Gemini 3 flash preview TPM 한도: 2M tokens/min
     # 요청당 ~850K 토큰 기준 → 분당 2건 → 30초 간격
     analysis_interval_secs: int = 30
+    # 관리자 키 — 비어 있으면 인증 비활성화(모든 관리 요청 통과)
+    admin_key: str = ""
     data_dir: Path = Path("/app/data")
 
     @property

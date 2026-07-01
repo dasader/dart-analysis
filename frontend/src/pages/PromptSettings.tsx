@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { fetchPrompts, updatePrompt } from "../api/client";
 import { getErrorMessage } from "../lib/errors";
+import AdminButton from "../components/AdminButton";
+import { useAdmin } from "../context/AdminContext";
 import type { PromptTemplate } from "../types";
 
 export default function PromptSettings() {
+  const { isAdmin } = useAdmin();
   const [prompts, setPrompts] = useState<PromptTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -63,6 +66,12 @@ export default function PromptSettings() {
         </p>
       </div>
 
+      {!isAdmin && (
+        <div className="mb-6 rounded-lg border border-warning/40 bg-warning-bg px-4 py-3 text-sm text-warning">
+          관리 기능을 사용하려면 우측 상단에서 관리자 로그인이 필요합니다.
+        </div>
+      )}
+
       {/* 플레이스홀더 안내 */}
       <div className="mb-6 rounded-lg border border-border bg-surface px-5 py-4">
         <h3 className="mb-2 text-sm font-semibold text-text-primary">
@@ -104,13 +113,13 @@ export default function PromptSettings() {
                 {saved === p.analysis_type && (
                   <span className="text-sm text-success">저장됨</span>
                 )}
-                <button
+                <AdminButton
                   onClick={() => handleSave(p.analysis_type)}
                   disabled={saving === p.analysis_type}
                   className="btn btn-primary"
                 >
                   {saving === p.analysis_type ? "저장중..." : "저장"}
-                </button>
+                </AdminButton>
               </div>
             </div>
 

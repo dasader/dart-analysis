@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, Outlet } from "react-router-dom";
 import { fetchSchedulerStatus } from "../api/client";
 import type { SchedulerStatus } from "../types";
+import { useAdmin } from "../context/AdminContext";
 
 export default function Layout() {
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
@@ -10,6 +11,15 @@ export default function Layout() {
   useEffect(() => {
     fetchSchedulerStatus().then(setScheduler).catch(() => {});
   }, []);
+
+  const { isAdmin, login, logout } = useAdmin();
+
+  const handleLogin = async () => {
+    const key = window.prompt("관리자 키를 입력하세요");
+    if (!key) return;
+    const ok = await login(key);
+    if (!ok) alert("관리자 키가 올바르지 않습니다.");
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -48,6 +58,15 @@ export default function Layout() {
             >
               설정
             </Link>
+            {isAdmin ? (
+              <button onClick={logout} className="nav-link">
+                관리자 로그아웃
+              </button>
+            ) : (
+              <button onClick={handleLogin} className="nav-link">
+                관리자 로그인
+              </button>
+            )}
           </div>
         </div>
       </header>

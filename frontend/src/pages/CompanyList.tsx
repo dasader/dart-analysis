@@ -4,6 +4,7 @@ import { fetchCompanies, deleteCompany, fetchTags } from "../api/client";
 import CompanyForm from "../components/CompanyForm";
 import CompanyEditModal from "../components/CompanyEditModal";
 import TagChip from "../components/TagChip";
+import AdminButton from "../components/AdminButton";
 import { useSort, SortIcon } from "../hooks/useSort";
 import type { Company, Tag } from "../types";
 
@@ -242,12 +243,12 @@ export default function CompanyList() {
                       >
                         수정
                       </button>
-                      <button
+                      <AdminButton
                         onClick={() => handleDelete(c)}
                         className="btn btn-text-danger"
                       >
                         삭제
-                      </button>
+                      </AdminButton>
                     </div>
                   </td>
                 </tr>

@@ -19,6 +19,7 @@ from app.services.report_service import (
     download_and_extract,
     extract_text_from_report,
 )
+from app.dependencies import require_admin
 
 router = APIRouter(tags=["reports"])
 
@@ -112,14 +113,14 @@ async def check_new_reports(company_id: int, db: Session = Depends(get_db)):
     return {"new_count": len(new_reports), "reports": new_reports}
 
 
-@router.delete("/api/reports/{report_id}", status_code=204)
+@router.delete("/api/reports/{report_id}", status_code=204, dependencies=[Depends(require_admin)])
 def delete_report(report_id: int, db: Session = Depends(get_db)):
     report = get_or_404(db, Report, report_id, "보고서를 찾을 수 없습니다.")
     db.delete(report)
     db.commit()
 
 
-@router.post("/api/reports/{report_id}/redownload", response_model=ReportResponse)
+@router.post("/api/reports/{report_id}/redownload", response_model=ReportResponse, dependencies=[Depends(require_admin)])
 async def redownload_report(report_id: int, db: Session = Depends(get_db)):
     report = get_or_404(db, Report, report_id, "보고서를 찾을 수 없습니다.")
 

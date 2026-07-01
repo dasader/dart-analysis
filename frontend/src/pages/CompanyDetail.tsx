@@ -17,6 +17,7 @@ import ReportTable from "../components/ReportTable";
 import DownloadModal from "../components/DownloadModal";
 import AnalysisView from "../components/AnalysisView";
 import TagChip from "../components/TagChip";
+import AdminButton from "../components/AdminButton";
 import { getErrorMessage } from "../lib/errors";
 import { ANALYSIS_TYPE_KEYS, ANALYSIS_TYPE_LABELS } from "../types";
 import type { Company, Report, Analysis, AnalysisType, Tag } from "../types";
@@ -209,7 +210,7 @@ export default function CompanyDetail() {
             >
               보고서 다운로드
             </button>
-            <button
+            <AdminButton
               disabled={analyzing}
               onClick={() => {
                 setAnalyzing(true);
@@ -220,13 +221,13 @@ export default function CompanyDetail() {
               className="btn btn-ghost-accent"
             >
               {analyzing ? "요청 중..." : "전체 분석"}
-            </button>
-            <button
+            </AdminButton>
+            <AdminButton
               onClick={handleDelete}
               className="btn btn-danger"
             >
               삭제
-            </button>
+            </AdminButton>
           </div>
         </div>
       </div>
