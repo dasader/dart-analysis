@@ -23,8 +23,7 @@
 |------|-----------|------|
 | 삭제 | `DELETE /api/companies/{id}` | 파괴적 |
 | 삭제 | `DELETE /api/reports/{id}` | 파괴적 |
-| 삭제 | `DELETE /api/tags/{id}` | 파괴적 |
-| 삭제 | `DELETE /api/companies/{id}/tags/{tag_id}` | 데이터 변경(태그 해제) |
+| 삭제 | `DELETE /api/tags/{id}` | 파괴적(태그 자체 삭제) |
 | 재다운로드 | `POST /api/reports/{id}/redownload` | 기존 분석 초기화(파괴적) |
 | LLM 분석 | `POST /api/reports/{id}/analyze` | Gemini 비용 |
 | LLM 분석 | `POST /api/reports/{id}/analyze-all` | Gemini 비용 |
@@ -37,7 +36,7 @@
 - 모든 `GET` 조회 엔드포인트 (기업/보고서/분석/큐 상태/스케줄러 상태/프롬프트 조회/태그)
 - `POST /api/companies` (기업 등록), `PUT /api/companies/{id}` (기업 수정)
 - `POST /api/tags` (태그 생성), `PUT /api/tags/{id}` (태그 수정)
-- `POST /api/companies/{id}/tags/{tag_id}` (기업에 태그 할당)
+- `POST /api/companies/{id}/tags/{tag_id}` (기업에 태그 할당), `DELETE /api/companies/{id}/tags/{tag_id}` (기업에서 태그 해제 — 공개 할당의 역연산, 비파괴적)
 - `POST /api/companies/{id}/reports/download` (보고서 수집·다운로드)
 - `GET /api/reports/{id}/download` (ZIP 다운로드), `GET /api/reports/{id}/content` (본문 열람)
 
