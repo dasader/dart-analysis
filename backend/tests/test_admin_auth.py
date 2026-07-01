@@ -44,6 +44,8 @@ PROTECTED = [
     ("post", "/api/reports/1/analyze-all"),
     ("post", "/api/companies/1/analyze-all"),
     ("post", "/api/scheduler/run-now"),
+    ("put", "/api/prompts/business"),
+    ("post", "/api/reports/1/analyze"),
 ]
 
 
