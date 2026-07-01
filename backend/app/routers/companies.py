@@ -12,6 +12,7 @@ from app.schemas import (
     CompanyCreate, CompanyUpdate, CompanyResponse, CompanySearchResult,
 )
 from app.services.dart_client import search_companies
+from app.dependencies import require_admin
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
@@ -101,7 +102,7 @@ def update_company(company_id: int, body: CompanyUpdate, db: Session = Depends(g
     return _single_company_response(db, company)
 
 
-@router.delete("/{company_id}", status_code=204)
+@router.delete("/{company_id}", status_code=204, dependencies=[Depends(require_admin)])
 def delete_company(company_id: int, db: Session = Depends(get_db)):
     company = get_or_404(db, Company, company_id, "기업을 찾을 수 없습니다.")
     db.delete(company)

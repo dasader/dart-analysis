@@ -28,3 +28,40 @@ def test_rejects_wrong_key(monkeypatch):
 def test_accepts_correct_key(monkeypatch):
     monkeypatch.setattr(settings, "admin_key", "secret")
     assert require_admin("secret") is None
+
+
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+PROTECTED = [
+    ("delete", "/api/tags/1"),
+    ("delete", "/api/reports/1"),
+    ("delete", "/api/companies/1"),
+    ("post", "/api/reports/1/redownload"),
+    ("post", "/api/reports/1/analyze-all"),
+    ("post", "/api/companies/1/analyze-all"),
+    ("post", "/api/scheduler/run-now"),
+]
+
+
+@pytest.mark.parametrize("method,path", PROTECTED)
+def test_protected_routes_401_without_key(monkeypatch, method, path):
+    monkeypatch.setattr(settings, "admin_key", "secret")
+    resp = getattr(client, method)(path)
+    assert resp.status_code == 401
+
+
+def test_verify_ok_with_correct_key(monkeypatch):
+    monkeypatch.setattr(settings, "admin_key", "secret")
+    resp = client.get("/api/admin/verify", headers={"X-Admin-Key": "secret"})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_verify_401_with_wrong_key(monkeypatch):
+    monkeypatch.setattr(settings, "admin_key", "secret")
+    resp = client.get("/api/admin/verify", headers={"X-Admin-Key": "nope"})
+    assert resp.status_code == 401

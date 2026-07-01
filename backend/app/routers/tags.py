@@ -5,6 +5,7 @@ from app.crud import get_or_404
 from app.database import get_db
 from app.models import Tag
 from app.schemas import TagResponse, TagCreate, TagUpdate
+from app.dependencies import require_admin
 
 router = APIRouter(prefix="/api/tags", tags=["tags"])
 
@@ -38,7 +39,7 @@ def update_tag(tag_id: int, body: TagUpdate, db: Session = Depends(get_db)):
     return tag
 
 
-@router.delete("/{tag_id}", status_code=204)
+@router.delete("/{tag_id}", status_code=204, dependencies=[Depends(require_admin)])
 def delete_tag(tag_id: int, db: Session = Depends(get_db)):
     tag = get_or_404(db, Tag, tag_id, "태그를 찾을 수 없습니다.")
     db.delete(tag)
