@@ -11,7 +11,7 @@ from app.scheduler import start_scheduler, shutdown_scheduler
 from app.seed_prompts import seed_default_prompts
 from app.services.analysis_queue import worker as queue_worker
 from app.services.dart_client import aclose_http
-from app.routers import companies, reports, analyses, scheduler
+from app.routers import companies, reports, analyses, scheduler, admin
 from app.routers import prompts as prompts_router
 from app.routers import tags as tags_router
 
@@ -58,3 +58,4 @@ app.include_router(analyses.router)
 app.include_router(scheduler.router)
 app.include_router(prompts_router.router)
 app.include_router(tags_router.router)
+app.include_router(admin.router)
