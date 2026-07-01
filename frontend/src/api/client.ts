@@ -12,13 +12,19 @@ import type {
   TagCreate,
   TagUpdate,
 } from "../types";
+import { getAdminKey } from "../lib/adminKey";
 
 const BASE = "/api";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const adminKey = getAdminKey();
   const resp = await fetch(`${BASE}${url}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(adminKey ? { "X-Admin-Key": adminKey } : {}),
+      ...((init?.headers as Record<string, string> | undefined) ?? {}),
+    },
   });
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));
@@ -155,4 +161,13 @@ export function assignTag(companyId: number, tagId: number): Promise<Company> {
 
 export function removeCompanyTag(companyId: number, tagId: number): Promise<Company> {
   return request(`/companies/${companyId}/tags/${tagId}`, { method: "DELETE" });
+}
+
+// --- Admin ---
+
+export async function verifyAdminKey(key: string): Promise<boolean> {
+  const resp = await fetch(`${BASE}/admin/verify`, {
+    headers: { "X-Admin-Key": key },
+  });
+  return resp.ok;
 }
