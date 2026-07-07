@@ -38,7 +38,7 @@ OPENDART_API_KEY=your_opendart_api_key
 GEMINI_API_KEY=your_gemini_api_key
 DATA_DIR=./data
 BACKEND_PORT=8016
-FRONTEND_PORT=8097
+FRONTEND_PORT=8116
 SCHEDULER_INTERVAL_HOURS=24
 ANALYSIS_INTERVAL_SECS=30
 ADMIN_KEY=                     # 관리 기능 보호용 키 (비우면 인증 비활성화)
@@ -69,7 +69,7 @@ cp .env.example .env   # 환경 변수 편집 후
 docker-compose up --build
 ```
 
-- 프론트엔드: http://localhost:8097
+- 프론트엔드: http://localhost:8116
 - 백엔드: http://localhost:8016
 
 ## 사용 방법
@@ -118,5 +118,7 @@ docker-compose up --build
 | 서비스 | 포트 |
 |--------|------|
 | 백엔드 (FastAPI) | 8016 |
-| 프론트엔드 prod (Nginx) | 8097 |
+| 프론트엔드 prod (Nginx) | 8116 |
 | 프론트엔드 dev (Vite) | 5185 |
+
+> 포트 배분 규칙(NN=16): [dasader/code · PORTS.md](https://github.com/dasader/code/blob/main/PORTS.md)

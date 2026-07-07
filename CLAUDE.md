@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> 포트 배분 규칙·레지스트리: https://github.com/dasader/code/blob/main/PORTS.md (이 서비스 NN=16). 신규 포트 배정 시 준수.
+
 ## 개발 서버 실행
 
 **백엔드** (포트 8016, 프로젝트 루트의 `.env` 파일 필요):
