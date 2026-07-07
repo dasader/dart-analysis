@@ -51,7 +51,7 @@ OPENDART_API_KEY=...
 GEMINI_API_KEY=...
 DATA_DIR=./data              # 로컬 개발용 (Docker: /app/data)
 BACKEND_PORT=8016
-FRONTEND_PORT=8097
+FRONTEND_PORT=8116
 SCHEDULER_INTERVAL_HOURS=24  # 신규 보고서 자동 수집 주기
 ANALYSIS_INTERVAL_SECS=30    # 보고서 간 Gemini 호출 최소 간격 (TPM 한도 대응)
 ADMIN_KEY=                   # 관리 기능 보호용 키 (비우면 인증 비활성화)
@@ -164,5 +164,5 @@ components/
 | 서비스 | 호스트 포트 |
 |--------|------------|
 | 백엔드 (FastAPI) | 8016 |
-| 프론트엔드 prod (Nginx) | 8097 |
+| 프론트엔드 prod (Nginx) | 8116 |
 | 프론트엔드 dev (Vite) | 5185 |
