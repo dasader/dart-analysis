@@ -31,6 +31,14 @@ npm run typecheck
 - `npx tsc --noEmit`은 Docker 빌드(`tsc -b`)와 검사 방식이 달라 로컬에서 통과해도 Docker 빌드가 실패할 수 있음
 - 프론트엔드 코드 수정 후 Docker 빌드 전에 반드시 `npm run typecheck`로 사전 검증
 
+**프론트엔드 E2E** (실제 헤드리스 브라우저 — 타입 검사가 못 보는 렌더·라우팅):
+```bash
+~/code/e2e-headless/run.sh http://localhost:8116 frontend/e2e
+```
+- `code/` 공용 실행기가 도커 이미지 안에서 브라우저를 띄운다 — 이 레포에는 설치·설정이 필요 없다
+- `docker compose up -d`로 스택이 떠 있어야 한다(nginx가 `backend` 업스트림을 요구해 frontend 단독 기동 불가)
+- 데이터에 의존하지 않는 셸·라우팅만 본다 — 등록 기업이 0건이어도 통과한다
+
 **백엔드 테스트** (관리자 인증 게이팅 검증):
 ```bash
 cd backend
