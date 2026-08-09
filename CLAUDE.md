@@ -63,7 +63,8 @@ DATA_DIR=./data              # 로컬 개발용 (Docker: /app/data)
 BACKEND_PORT=8016
 FRONTEND_PORT=8116
 SCHEDULER_INTERVAL_HOURS=24  # 신규 보고서 자동 수집 주기
-ANALYSIS_INTERVAL_SECS=30    # 보고서 간 Gemini 호출 최소 간격 (TPM 한도 대응)
+BATCH_POLL_INTERVAL_SECS=60  # batch 작업 상태 확인 주기
+SCHEDULER_AUTO_ANALYZE=false # 수집한 신규 보고서를 자동 분석할지
 ADMIN_KEY=                   # 관리 기능 보호용 키 (비우면 인증 비활성화)
 ```
 
@@ -72,14 +73,14 @@ ADMIN_KEY=                   # 관리 기능 보호용 키 (비우면 인증 비
 ### 백엔드 (`backend/app/`)
 
 ```
-main.py          FastAPI 앱, lifespan(DB 초기화·프롬프트 시딩·스케줄러·큐 워커 시작)
+main.py          FastAPI 앱, lifespan(DB 초기화·프롬프트 시딩·고아 pending 재투입·스케줄러·큐 워커)
 config.py        pydantic-settings, .env 탐색 순서: [".env", "../.env"], extra="ignore" (admin_key 포함)
 dependencies.py  require_admin — X-Admin-Key 헤더 검증 (admin_key 미설정 시 통과)
 database.py      SQLAlchemy engine + SessionLocal + Base
-models.py        Company · Report · Analysis · PromptTemplate
+models.py        Company · Report · Analysis · PromptTemplate · BatchJob
 schemas.py       Pydantic 요청/응답 모델
 seed_prompts.py  3가지 기본 프롬프트 템플릿 DB 시딩
-scheduler.py     APScheduler — 활성 기업의 신규 사업보고서 자동 수집
+scheduler.py     APScheduler — 신규 사업보고서 자동 수집 + batch 상태 폴링(60초)
 
 routers/
   companies.py   CRUD + OpenDART 기업 검색 (삭제는 관리자 전용)
@@ -87,26 +88,37 @@ routers/
   analyses.py    분석 요청·조회·큐 상태 (분석 요청은 관리자 전용)
   scheduler.py   스케줄러 상태 조회·즉시 실행 (즉시 실행은 관리자 전용)
   prompts.py     프롬프트 템플릿 CRUD (수정은 관리자 전용)
+  batches.py     batch 작업 목록·취소 (취소는 관리자 전용)
   tags.py        태그 CRUD (삭제는 관리자 전용)
   admin.py       GET /api/admin/verify — 관리자 키 검증
 
 services/
   dart_client.py      OpenDART API 연동 (corpCode.xml ZIP 파싱, list.json, document.xml)
   report_service.py   ZIP 다운로드·추출, XML/HTML 텍스트 추출
-  gemini_client.py    Gemini API (run_in_executor로 블로킹 호출 분리, 429 자동 재시도)
-  analysis_service.py run_combined_analysis() — 보고서 1건에 대해 Gemini 1회 호출로 3가지 분석 동시 처리
-  analysis_queue.py   asyncio.Queue, report_id 기반, 중복 투입 방지, TPM 간격 제어
+  gemini_batch.py     Gemini Batch API — JSONL 빌드·업로드·제출·상태조회·결과 파싱
+  batch_poller.py     진행 중 BatchJob 상태 확인 → 완료 시 결과를 Analysis에 분배
+  analysis_service.py 프롬프트 조립(build_prompts)·결과 저장(save_result)·JSON 추출
+  analysis_queue.py   asyncio.Queue — 요청을 5초 창으로 모아 batch 1건으로 제출
 ```
 
-### 분석 흐름
+### 분석 흐름 (Gemini Batch API)
+
+모든 분석은 Batch API로 처리된다. 실시간 경로는 없다.
 
 1. 엔드포인트가 `Analysis` 레코드(status=pending) 생성 후 `enqueue(report_id)` 호출
-2. 큐 워커가 `run_combined_analysis(db, report_id)` 실행
-3. pending 상태인 분석 유형을 한꺼번에 수집, **Gemini 1회 호출**로 JSON 응답 수신
-4. JSON 파싱 후 각 `Analysis` 레코드에 저장 (status→completed/failed)
-5. 프론트엔드는 5초 폴링으로 상태 감지
+2. 큐 워커가 첫 요청 후 **5초 창** 동안 더 모아 한 batch로 묶는다
+3. 보고서별로 JSONL 1줄 생성(3종 분석을 1요청으로 통합) → 업로드 → `batches.create`
+4. `BatchJob` 저장, 담당 `Analysis`들 running 전환
+5. 스케줄러가 60초마다 `poll_batches()` — 완료 시 결과 JSONL을 `key`(=report_id)로 분배
+6. 프론트엔드는 5초 폴링으로 상태 감지, `/settings/batches`에서 작업 현황 확인
 
-**중요**: `gemini_client.generate()`는 동기 함수(`generate_content`)를 `loop.run_in_executor()`로 래핑 — 직접 호출하면 이벤트 루프가 블로킹되어 다른 API 요청 불가.
+**중요**:
+- 큐는 실행 대기열이 아니라 **묶는 버퍼**다. 진행 상태의 원본은 DB(`BatchJob`)이므로
+  재시작해도 폴링이 이어받는다. 제출 전에 죽어 pending으로 남은 건은 시작 시 재투입된다
+- JSONL은 REST 원형 스키마 — `systemInstruction`은 top-level, `maxOutputTokens`·
+  `thinkingConfig`는 `generationConfig` 안 (inline 방식의 평면 config와 형태가 다르다)
+- 보고서 1건이 UTF-8로 ~1.7MB라 inline 방식(총 20MB 제한)은 쓸 수 없다
+- 잡이 `SUCCEEDED`여도 개별 요청은 실패할 수 있다 — 결과 줄마다 `error` 키를 확인한다
 
 ### 관리자 게이팅
 
@@ -140,6 +152,7 @@ pages/
   CompanyList.tsx    기업 목록 CRUD, 컬럼별 정렬 (기업명·코드·보고서수·분석일)
   CompanyDetail.tsx  탭(보고서·분석 3종), 토스트 알림, 분석 상태 관리
   PromptSettings.tsx 프롬프트 템플릿 편집
+  BatchList.tsx      /settings/batches — batch 작업 현황·취소 (15초 폴링)
 components/
   ReportTable.tsx      정렬·분석·재다운로드·삭제, 보고서명 클릭 시 ZIP 다운로드
   AnalysisView.tsx     분석 결과 표시, 5초 폴링, ReactMarkdown + remark-gfm, 인쇄 전용 통합 뷰
@@ -163,11 +176,25 @@ components/
 
 ### Gemini 모델 및 한도
 
-- 모델: `gemini-3.1-flash-lite`
-- TPM 한도: 2M tokens/min → `analysis_interval_secs=30` (보고서 간 최소 간격)
-- 입력 상한: 1,400,000자 (앞 80% + 뒤 20% 방식 트런케이션)
+- 모델: `gemini-3.5-flash-lite`, thinking level `MINIMAL`
+- **thinking을 올리지 마라.** 사업보고서 분석은 추론이 아니라 추출·나열 과제다.
+  실측상 minimal과 high의 품질이 같은데 high는 thinking 토큰을 추가 과금하고 2배 느리다.
+  이전 모델(`3.1-flash-lite`)은 high에서 오히려 출력이 짧아졌다
+- 입력 상한: 1,400,000자 (앞 80% + 뒤 20% 방식 트런케이션).
+  실측 **1.49자/토큰**이라 약 94만 토큰 — 컨텍스트 상한 1,048,576에 근접하니 늘리지 마라
 - 출력 토큰: 분석 유형당 8,192 × 유형 수 (combined 시 최대 24,576)
-- 429 RESOURCE_EXHAUSTED 시 retryDelay 파싱 후 최대 5회 자동 재시도
+- Batch API는 표준 대비 **50% 할인**. 실측 turnaround 8.3분 (문서상 SLO는 24시간)
+- batch 작업은 pending/running 48시간 초과 시 `JOB_STATE_EXPIRED`로 만료된다 (자동 재시도 없음)
+
+**모델 선정 근거** (실제 SK하이닉스 2024년 사업보고서로 30회 실측):
+
+| 모델 | 종속회사 표 행 수 (실제 56개사) | 1건 USD |
+|---|---|---|
+| 3.1-flash-lite | 7~10행 (56개 중 8개만 나열) | $0.112 |
+| **3.5-flash-lite** | **55~58행** | $0.137 (batch $0.068) |
+| 3.6-flash | 51~58행 | $0.665 |
+
+`3.1-flash-lite`는 2027-05-07 종료 예정이기도 하다.
 
 ### 포트
 

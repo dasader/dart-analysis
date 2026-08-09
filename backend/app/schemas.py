@@ -100,13 +100,28 @@ class AnalysisResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class RunningInfo(BaseModel):
-    report_id: int
-
-
 class QueueStatus(BaseModel):
-    pending_count: int
-    running: RunningInfo | None = None  # 현재 처리 중인 보고서
+    pending_count: int          # 제출 대기 중인 보고서 수
+    running_batches: int        # 진행 중인 batch 작업 수
+    running_reports: int        # 그 batch들이 담당하는 보고서 수
+
+
+# --- Batch ---
+
+class BatchJobResponse(BaseModel):
+    id: int
+    job_name: str
+    model_name: str
+    thinking_level: str
+    state: str
+    report_ids: list[int]
+    request_count: int
+    success_count: int
+    failed_count: int
+    error_message: str | None
+    submitted_at: datetime | None
+    completed_at: datetime | None
+    is_terminal: bool
 
 
 # --- Scheduler ---

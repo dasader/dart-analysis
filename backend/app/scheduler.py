@@ -2,9 +2,11 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import settings
-from app.constants import REPORT_TYPE_ANNUAL
+from app.constants import ANALYSIS_TYPES, AnalysisStatus, REPORT_TYPE_ANNUAL
 from app.database import SessionLocal
-from app.models import Company, Report
+from app.models import Analysis, Company, Report
+from app.services.analysis_queue import enqueue
+from app.services.batch_poller import poll_batches
 from app.services.dart_client import list_reports, parse_filing_date
 from app.services.report_service import create_report_from_dart
 
@@ -50,11 +52,26 @@ async def check_and_download_reports():
                     # 보고서명에 연도가 없으면 공시 연도, 그것도 없으면 max_year+1
                     filing = parse_filing_date(dr.get("filing_date"))
                     fallback_year = filing.year if filing else max_year + 1
-                    await create_report_from_dart(db, company, dr, fallback_year)
+                    report = await create_report_from_dart(db, company, dr, fallback_year)
+                    if settings.scheduler_auto_analyze:
+                        _request_analysis(db, report)
             except Exception:
                 continue
     finally:
         db.close()
+
+
+def _request_analysis(db, report: Report) -> None:
+    """신규 수집 보고서의 3종 분석을 pending으로 만들고 큐에 투입."""
+    for atype in ANALYSIS_TYPES:
+        db.add(Analysis(
+            company_id=report.company_id,
+            report_id=report.id,
+            analysis_type=atype,
+            status=AnalysisStatus.PENDING,
+        ))
+    db.commit()
+    enqueue(report.id)
 
 
 def start_scheduler():
@@ -62,6 +79,12 @@ def start_scheduler():
         check_and_download_reports,
         trigger=IntervalTrigger(hours=settings.scheduler_interval_hours),
         id="check_reports",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        poll_batches,
+        trigger=IntervalTrigger(seconds=settings.batch_poll_interval_secs),
+        id="poll_batches",
         replace_existing=True,
     )
     scheduler.start()

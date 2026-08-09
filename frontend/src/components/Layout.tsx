@@ -49,6 +49,9 @@ export default function Layout() {
                 </span>
               </div>
             )}
+            <Link to="/settings/batches" className="nav-link">
+              분석 현황
+            </Link>
             <Link to="/tags" className="nav-link">
               태그 관리
             </Link>

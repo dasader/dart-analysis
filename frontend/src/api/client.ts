@@ -6,6 +6,8 @@ import type {
   Report,
   Analysis,
   SchedulerStatus,
+  BatchJob,
+  QueueStatus,
   PromptTemplate,
   PromptUpdate,
   Tag,
@@ -110,6 +112,20 @@ export function analyzeAll(
   companyId: number,
 ): Promise<{ message: string; queued: number }> {
   return request(`/companies/${companyId}/analyze-all`, { method: "POST" });
+}
+
+// --- Batches ---
+
+export function fetchBatches(): Promise<BatchJob[]> {
+  return request("/batches");
+}
+
+export function cancelBatch(batchId: number): Promise<{ message: string }> {
+  return request(`/batches/${batchId}/cancel`, { method: "POST" });
+}
+
+export function fetchQueueStatus(): Promise<QueueStatus> {
+  return request("/queue/status");
 }
 
 // --- Scheduler ---

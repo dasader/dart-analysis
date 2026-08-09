@@ -9,9 +9,9 @@ from app.config import settings
 from app.database import Base, engine, SessionLocal
 from app.scheduler import start_scheduler, shutdown_scheduler
 from app.seed_prompts import seed_default_prompts
-from app.services.analysis_queue import worker as queue_worker
+from app.services.analysis_queue import requeue_orphans, worker as queue_worker
 from app.services.dart_client import aclose_http
-from app.routers import companies, reports, analyses, scheduler, admin
+from app.routers import companies, reports, analyses, scheduler, admin, batches
 from app.routers import prompts as prompts_router
 from app.routers import tags as tags_router
 
@@ -26,6 +26,8 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     settings.reports_dir.mkdir(parents=True, exist_ok=True)
+    # 재시작으로 in-memory 큐가 유실된 pending 분석을 다시 투입 (진행 중 batch는 폴링이 이어받음)
+    requeue_orphans()
     start_scheduler()
     worker_task = asyncio.create_task(queue_worker())
     yield
@@ -59,3 +61,4 @@ app.include_router(scheduler.router)
 app.include_router(prompts_router.router)
 app.include_router(tags_router.router)
 app.include_router(admin.router)
+app.include_router(batches.router)

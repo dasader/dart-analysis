@@ -82,6 +82,28 @@ export interface SchedulerStatus {
   interval_hours: number;
 }
 
+export interface BatchJob {
+  id: number;
+  job_name: string;
+  model_name: string;
+  thinking_level: string;
+  state: string;
+  report_ids: number[];
+  request_count: number;
+  success_count: number;
+  failed_count: number;
+  error_message: string | null;
+  submitted_at: string | null;
+  completed_at: string | null;
+  is_terminal: boolean;
+}
+
+export interface QueueStatus {
+  pending_count: number;
+  running_batches: number;
+  running_reports: number;
+}
+
 export interface PromptTemplate {
   id: number;
   analysis_type: string;
