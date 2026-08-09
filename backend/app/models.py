@@ -109,6 +109,19 @@ class PromptTemplate(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class AppSetting(Base):
+    """런타임에 바꿀 수 있는 설정. 값이 없으면 .env 기본값을 쓴다.
+
+    .env는 앱 시작 시 한 번만 읽히므로, 재시작 없이 바꿔야 하는 값만 여기 둔다.
+    """
+
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Tag(Base):
     __tablename__ = "tags"
 

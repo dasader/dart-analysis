@@ -5,6 +5,7 @@ from app.config import settings
 from app.constants import ANALYSIS_TYPES, AnalysisStatus, REPORT_TYPE_ANNUAL
 from app.database import SessionLocal
 from app.models import Analysis, Company, Report
+from app.services import app_settings
 from app.services.analysis_queue import enqueue
 from app.services.batch_poller import poll_batches
 from app.services.dart_client import list_reports, parse_filing_date
@@ -53,7 +54,7 @@ async def check_and_download_reports():
                     filing = parse_filing_date(dr.get("filing_date"))
                     fallback_year = filing.year if filing else max_year + 1
                     report = await create_report_from_dart(db, company, dr, fallback_year)
-                    if settings.scheduler_auto_analyze:
+                    if app_settings.get(db, "scheduler_auto_analyze"):
                         _request_analysis(db, report)
             except Exception:
                 continue

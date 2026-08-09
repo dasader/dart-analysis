@@ -136,6 +136,19 @@ class ExtractionFailure(BaseModel):
     failed_at: datetime | None
 
 
+# --- App Settings ---
+
+class AppSettingResponse(BaseModel):
+    key: str
+    label: str
+    description: str
+    value: bool
+
+
+class AppSettingUpdate(BaseModel):
+    value: bool
+
+
 # --- Scheduler ---
 
 class SchedulerStatus(BaseModel):

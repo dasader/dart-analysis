@@ -115,6 +115,14 @@ export interface QueueStatus {
   running_reports: number;
 }
 
+/** 런타임에 바꿀 수 있는 설정 (DB 저장, 재시작 불필요) */
+export interface AppSetting {
+  key: string;
+  label: string;
+  description: string;
+  value: boolean;
+}
+
 export interface PromptTemplate {
   id: number;
   analysis_type: string;

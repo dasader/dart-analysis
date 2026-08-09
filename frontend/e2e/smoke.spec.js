@@ -18,7 +18,21 @@ test('내비게이션: 태그 관리 → 설정', async ({ page }) => {
 
   await page.getByRole('link', { name: '설정' }).click()
   await expect(page).toHaveURL(/\/settings\/prompts$/)
-  await expect(page.getByText('Gemini LLM 분석에 사용되는 프롬프트를 편집합니다')).toBeVisible()
+  await expect(page.getByText('분석 동작과 Gemini LLM 프롬프트를 편집합니다')).toBeVisible()
+})
+
+test('설정 화면: 동작 토글은 상태를 드러내고 미로그인 시 잠긴다', async ({ page }) => {
+  await page.goto('/settings/prompts')
+  await expect(page.getByRole('heading', { name: '동작 설정' })).toBeVisible()
+
+  const extract = page.getByRole('switch', { name: '보고서 구역 추출' })
+  await expect(extract).toBeVisible()
+  // 켜짐/꺼짐이 보조기술에도 드러나야 한다
+  await expect(extract).toHaveAttribute('aria-checked', /true|false/)
+  // 관리자 로그인 전에는 바꿀 수 없다
+  await expect(extract).toBeDisabled()
+
+  await expect(page.getByRole('switch', { name: '신규 보고서 자동 분석' })).toBeVisible()
 })
 
 test('관리 기능은 로그인 전 안내를 노출', async ({ page }) => {

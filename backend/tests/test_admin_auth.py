@@ -47,6 +47,7 @@ PROTECTED = [
     ("put", "/api/prompts/business"),
     ("post", "/api/reports/1/analyze"),
     ("post", "/api/batches/1/cancel"),
+    ("put", "/api/settings/scheduler_auto_analyze"),
 ]
 
 

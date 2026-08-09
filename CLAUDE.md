@@ -64,8 +64,8 @@ BACKEND_PORT=8016
 FRONTEND_PORT=8116
 SCHEDULER_INTERVAL_HOURS=24  # 신규 보고서 자동 수집 주기
 BATCH_POLL_INTERVAL_SECS=60  # batch 작업 상태 확인 주기
-SCHEDULER_AUTO_ANALYZE=false # 수집한 신규 보고서를 자동 분석할지
-SECTION_EXTRACT_ENABLED=true # 분석에 필요한 구역만 추려 LLM에 전달 (입력 ~87% 절감)
+SCHEDULER_AUTO_ANALYZE=false # 수집한 신규 보고서를 자동 분석할지 (화면에서 변경 가능)
+SECTION_EXTRACT_ENABLED=true # 분석에 필요한 구역만 추려 LLM에 전달 (화면에서 변경 가능)
 ADMIN_KEY=                   # 관리 기능 보호용 키 (비우면 인증 비활성화)
 ```
 
@@ -78,7 +78,7 @@ main.py          FastAPI 앱, lifespan(DB 초기화·프롬프트 시딩·고아
 config.py        pydantic-settings, .env 탐색 순서: [".env", "../.env"], extra="ignore" (admin_key 포함)
 dependencies.py  require_admin — X-Admin-Key 헤더 검증 (admin_key 미설정 시 통과)
 database.py      SQLAlchemy engine + SessionLocal + Base
-models.py        Company · Report · Analysis · PromptTemplate · BatchJob
+models.py        Company · Report · Analysis · PromptTemplate · BatchJob · AppSetting
 schemas.py       Pydantic 요청/응답 모델
 seed_prompts.py  3가지 기본 프롬프트 템플릿 DB 시딩
 scheduler.py     APScheduler — 신규 사업보고서 자동 수집 + batch 상태 폴링(60초)
@@ -90,6 +90,7 @@ routers/
   scheduler.py   스케줄러 상태 조회·즉시 실행 (즉시 실행은 관리자 전용)
   prompts.py     프롬프트 템플릿 CRUD (수정은 관리자 전용)
   batches.py     batch 작업 목록·취소·구역추출 실패 목록 (취소는 관리자 전용)
+  app_settings.py 동작 설정 조회·변경 (변경은 관리자 전용)
   tags.py        태그 CRUD (삭제는 관리자 전용)
   admin.py       GET /api/admin/verify — 관리자 키 검증
 
@@ -98,6 +99,7 @@ services/
   report_service.py   ZIP 다운로드·추출, XML/HTML 텍스트 추출
   gemini_batch.py     Gemini Batch API — JSONL 빌드·업로드·제출·상태조회·결과 파싱
   section_extract.py  보고서에서 분석에 쓰이는 구역(I·II·XII)만 추출. 실패 시 예외
+  app_settings.py     런타임 설정 — DB 저장, 없으면 .env 기본값 폴백
   batch_poller.py     진행 중 BatchJob 상태 확인 → 완료 시 결과를 Analysis에 분배
   analysis_service.py 프롬프트 조립(build_prompts)·결과 저장(save_result)·JSON 추출
   analysis_queue.py   asyncio.Queue — 요청을 5초 창으로 모아 batch 1건으로 제출
@@ -153,8 +155,9 @@ types/           TypeScript 인터페이스
 pages/
   CompanyList.tsx    기업 목록 CRUD, 컬럼별 정렬 (기업명·코드·보고서수·분석일)
   CompanyDetail.tsx  탭(보고서·분석 3종), 토스트 알림, 분석 상태 관리
-  PromptSettings.tsx 프롬프트 템플릿 편집
+  PromptSettings.tsx 동작 설정 토글 + 프롬프트 템플릿 편집
   BatchList.tsx      /settings/batches — batch 작업 현황·취소 (15초 폴링)
+  SettingToggles.tsx 동작 설정 토글 — 끄면 비용이 느는 항목은 확인 후 변경
 components/
   ReportTable.tsx      정렬·분석·재다운로드·삭제, 보고서명 클릭 시 ZIP 다운로드
   AnalysisView.tsx     분석 결과 표시, 5초 폴링, ReactMarkdown + remark-gfm, 인쇄 전용 통합 뷰
@@ -175,6 +178,17 @@ components/
 - `list.json` → 공시 목록 (`pblntf_ty=A` 정기공시만)
 - `document.xml` → 보고서 ZIP 다운로드, `{DATA_DIR}/reports/{corp_code}/{fiscal_year}/{rcept_no}.zip` 저장
 - 보고서 ZIP 다운로드 엔드포인트: `GET /api/reports/{id}/download` → `Content-Disposition` 헤더로 `회사명_연도_사업보고서.zip` 파일명 설정
+
+### 런타임 설정 (AppSetting)
+
+`.env`는 앱 시작 시 한 번만 읽히므로, 운영 중 바꿔야 하는 값은 `app_settings` 테이블에 둔다.
+DB에 값이 없으면 `.env` 기본값으로 폴백하므로 기존 동작이 유지된다.
+
+- 화면: `/settings/prompts` 상단 "동작 설정" (관리자만 변경 가능, 재시작 불필요)
+- 대상: `scheduler_auto_analyze`, `section_extract_enabled`
+- 새 토글을 추가하려면 `services/app_settings.py`의 `TOGGLES`에 항목 하나만 넣으면
+  API·화면이 자동으로 따라온다
+- `batch_poll_interval_secs`는 APScheduler 등록 시점에 쓰이므로 `.env` 전용이다
 
 ### 구역 추출
 

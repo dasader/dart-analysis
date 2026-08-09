@@ -9,6 +9,7 @@ import type {
   BatchJob,
   QueueStatus,
   ExtractionFailure,
+  AppSetting,
   PromptTemplate,
   PromptUpdate,
   Tag,
@@ -137,6 +138,19 @@ export function fetchQueueStatus(): Promise<QueueStatus> {
 
 export function fetchSchedulerStatus(): Promise<SchedulerStatus> {
   return request("/scheduler/status");
+}
+
+// --- App Settings ---
+
+export function fetchAppSettings(): Promise<AppSetting[]> {
+  return request("/settings");
+}
+
+export function updateAppSetting(key: string, value: boolean): Promise<AppSetting> {
+  return request(`/settings/${key}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
 }
 
 // --- Prompts ---

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchPrompts, updatePrompt } from "../api/client";
 import { getErrorMessage } from "../lib/errors";
 import AdminButton from "../components/AdminButton";
+import SettingToggles from "../components/SettingToggles";
 import { useAdmin } from "../context/AdminContext";
 import type { PromptTemplate } from "../types";
 
@@ -58,11 +59,9 @@ export default function PromptSettings() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-navy">
-          프롬프트 설정
-        </h1>
+        <h1 className="text-2xl font-bold tracking-tight text-navy">설정</h1>
         <p className="mt-1 text-sm text-text-secondary">
-          Gemini LLM 분석에 사용되는 프롬프트를 편집합니다. 변경 즉시 반영됩니다.
+          분석 동작과 Gemini LLM 프롬프트를 편집합니다. 변경 즉시 반영됩니다.
         </p>
       </div>
 
@@ -71,6 +70,8 @@ export default function PromptSettings() {
           관리 기능을 사용하려면 우측 상단에서 관리자 로그인이 필요합니다.
         </div>
       )}
+
+      <SettingToggles />
 
       {/* 플레이스홀더 안내 */}
       <div className="mb-6 rounded-lg border border-border bg-surface px-5 py-4">
