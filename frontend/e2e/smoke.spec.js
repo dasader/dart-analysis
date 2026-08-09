@@ -34,3 +34,20 @@ test('첫 화면에 콘솔 에러 없음', async ({ page }) => {
   await page.goto('/', { waitUntil: 'networkidle' })
   expect(errors, '브라우저 콘솔 에러').toEqual([])
 })
+
+test('분석 현황: batch 작업 목록 화면 렌더', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('link', { name: '분석 현황' }).click()
+  await expect(page).toHaveURL(/\/settings\/batches$/)
+  await expect(page.getByRole('heading', { name: '분석 작업 현황' })).toBeVisible()
+  // 데이터 유무와 무관하게 큐 요약은 항상 뜬다
+  await expect(page.getByText('제출 대기')).toBeVisible()
+})
+
+test('분석 현황 화면에 콘솔 에러 없음', async ({ page }) => {
+  const errors = []
+  page.on('console', m => m.type() === 'error' && errors.push(m.text()))
+  page.on('pageerror', e => errors.push(String(e)))
+  await page.goto('/settings/batches', { waitUntil: 'networkidle' })
+  expect(errors, '브라우저 콘솔 에러').toEqual([])
+})
