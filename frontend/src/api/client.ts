@@ -8,6 +8,7 @@ import type {
   SchedulerStatus,
   BatchJob,
   QueueStatus,
+  ExtractionFailure,
   PromptTemplate,
   PromptUpdate,
   Tag,
@@ -122,6 +123,10 @@ export function fetchBatches(): Promise<BatchJob[]> {
 
 export function cancelBatch(batchId: number): Promise<{ message: string }> {
   return request(`/batches/${batchId}/cancel`, { method: "POST" });
+}
+
+export function fetchExtractionFailures(): Promise<ExtractionFailure[]> {
+  return request("/batches/extraction-failures");
 }
 
 export function fetchQueueStatus(): Promise<QueueStatus> {

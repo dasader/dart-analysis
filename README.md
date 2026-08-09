@@ -6,7 +6,8 @@ OpenDART API로 상장기업의 사업보고서를 수집하고, Google Gemini�
 
 - **기업 관리**: OpenDART 기업 검색 및 등록, 활성/비활성 관리
 - **보고서 수집**: 사업보고서 수동 다운로드 / 스케줄러 자동 수집 (24시간 주기)
-- **AI 분석**: Gemini Batch API로 3가지 분석 동시 처리 (표준 대비 50% 저렴, 통상 수 분 내 완료)
+- **AI 분석**: Gemini Batch API로 3가지 분석 동시 처리 (통상 수 분 내 완료)
+- **비용 최적화**: 보고서에서 분석에 필요한 구역만 추려 전달 + Batch 50% 할인 → 보고서 1건당 약 $0.014
 - **결과 조회**: 연도별 분석 결과 열람, PDF 출력 (선택 연도의 3개 분석 통합 출력)
 - **프롬프트 관리**: 분석 유형별 시스템 프롬프트 편집
 - **관리자 게이팅**: 관리자키(`ADMIN_KEY`)로 삭제·재다운로드·AI 분석·프롬프트 수정·스케줄러 수동 실행을 보호 (조회·다운로드·기업/태그 등록은 공개)
@@ -42,6 +43,7 @@ FRONTEND_PORT=8116
 SCHEDULER_INTERVAL_HOURS=24
 BATCH_POLL_INTERVAL_SECS=60
 SCHEDULER_AUTO_ANALYZE=false
+SECTION_EXTRACT_ENABLED=true
 ADMIN_KEY=                     # 관리 기능 보호용 키 (비우면 인증 비활성화)
 ```
 
@@ -108,6 +110,7 @@ docker-compose up --build
 | `SCHEDULER_INTERVAL_HOURS` | 24 | 신규 보고서 자동 수집 주기 |
 | `BATCH_POLL_INTERVAL_SECS` | 60 | batch 작업 상태 확인 주기 (초) |
 | `SCHEDULER_AUTO_ANALYZE` | false | 수집한 신규 보고서를 자동으로 분석 요청할지 |
+| `SECTION_EXTRACT_ENABLED` | true | 분석에 필요한 구역만 추려 전달 (입력 ~87% 절감) |
 | `DATA_DIR` | `/app/data` | SQLite DB 및 보고서 파일 저장 경로 |
 | `ADMIN_KEY` | (빈 값) | 관리 기능 보호용 키. 비우면 인증 비활성화 |
 

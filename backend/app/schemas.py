@@ -124,6 +124,18 @@ class BatchJobResponse(BaseModel):
     is_terminal: bool
 
 
+class ExtractionFailure(BaseModel):
+    """구역 추출 실패 — 보고서 서식 변경 신호. LLM에는 보내지 않았다."""
+
+    report_id: int
+    company_id: int
+    corp_name: str
+    report_name: str
+    fiscal_year: int
+    reason: str
+    failed_at: datetime | None
+
+
 # --- Scheduler ---
 
 class SchedulerStatus(BaseModel):

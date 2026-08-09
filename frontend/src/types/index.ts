@@ -98,6 +98,17 @@ export interface BatchJob {
   is_terminal: boolean;
 }
 
+/** 구역 추출 실패 — 보고서 서식 변경 신호. LLM에는 보내지 않은 상태다. */
+export interface ExtractionFailure {
+  report_id: number;
+  company_id: number;
+  corp_name: string;
+  report_name: string;
+  fiscal_year: number;
+  reason: string;
+  failed_at: string | null;
+}
+
 export interface QueueStatus {
   pending_count: number;
   running_batches: number;

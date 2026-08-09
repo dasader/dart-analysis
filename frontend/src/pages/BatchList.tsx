@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
-import { cancelBatch, fetchBatches, fetchQueueStatus } from "../api/client";
+import { Link } from "react-router-dom";
+import {
+  cancelBatch,
+  fetchBatches,
+  fetchExtractionFailures,
+  fetchQueueStatus,
+} from "../api/client";
 import { getErrorMessage } from "../lib/errors";
 import AdminButton from "../components/AdminButton";
-import type { BatchJob, QueueStatus } from "../types";
+import type { BatchJob, ExtractionFailure, QueueStatus } from "../types";
 
 /** JOB_STATE_* → 한글 라벨 + 배지 색 */
 const STATE_LABEL: Record<string, { text: string; cls: string }> = {
@@ -32,14 +38,16 @@ function formatTime(iso: string | null): string {
 export default function BatchList() {
   const [jobs, setJobs] = useState<BatchJob[]>([]);
   const [queue, setQueue] = useState<QueueStatus | null>(null);
+  const [failures, setFailures] = useState<ExtractionFailure[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = () =>
-    Promise.all([fetchBatches(), fetchQueueStatus()])
-      .then(([b, q]) => {
+    Promise.all([fetchBatches(), fetchQueueStatus(), fetchExtractionFailures()])
+      .then(([b, q, f]) => {
         setJobs(b);
         setQueue(q);
+        setFailures(f);
         setError(null);
       })
       .catch((e) => setError(getErrorMessage(e)))
@@ -91,6 +99,40 @@ export default function BatchList() {
       {error && (
         <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {failures.length > 0 && (
+        <div
+          role="alert"
+          className="mb-6 rounded border-l-4 border-amber-500 bg-amber-50 px-5 py-4"
+        >
+          <h2 className="flex items-center gap-2 font-semibold text-amber-900">
+            <span aria-hidden="true">⚠</span>
+            보고서 구역 추출 실패 {failures.length}건 — 확인이 필요합니다
+          </h2>
+          <p className="mt-1 text-sm text-amber-800">
+            보고서 서식이 예상과 달라 분석에 필요한 구역을 찾지 못했습니다.
+            해당 보고서는 <b>AI에 전달되지 않았습니다</b>(비용이 발생하지 않았습니다).
+            추출 규칙(<code className="font-mono text-xs">section_extract.py</code>) 수정이
+            필요합니다.
+          </p>
+          <ul className="mt-3 space-y-1.5 text-sm">
+            {failures.map((f) => (
+              <li key={f.report_id} className="text-amber-900">
+                <Link
+                  to={`/companies/${f.company_id}`}
+                  className="font-medium underline underline-offset-2"
+                >
+                  {f.corp_name}
+                </Link>{" "}
+                <span className="text-amber-700">
+                  {f.fiscal_year}년 {f.report_name}
+                </span>
+                <div className="text-xs text-amber-700">{f.reason}</div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

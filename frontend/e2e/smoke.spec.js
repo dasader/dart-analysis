@@ -44,6 +44,28 @@ test('분석 현황: batch 작업 목록 화면 렌더', async ({ page }) => {
   await expect(page.getByText('제출 대기')).toBeVisible()
 })
 
+test('구역 추출 실패는 경고 배너와 헤더 배지로 알린다', async ({ page }) => {
+  // 실패 목록을 가로채 배너가 뜨는지 본다 (실제 실패를 만들지 않고 표시 경로만 검증)
+  await page.route('**/api/batches/extraction-failures', route =>
+    route.fulfill({
+      json: [{
+        report_id: 1, company_id: 1, corp_name: '테스트기업',
+        report_name: '사업보고서 (2024.12)', fiscal_year: 2024,
+        reason: '보고서에서 필수 구역을 찾지 못했습니다: 사업의 내용.',
+        failed_at: '2026-08-09T00:00:00',
+      }],
+    }))
+
+  await page.goto('/settings/batches')
+  const banner = page.getByRole('alert')
+  await expect(banner).toContainText('구역 추출 실패 1건')
+  // 비용이 나가지 않았다는 사실이 반드시 보여야 한다
+  await expect(banner).toContainText('AI에 전달되지 않았습니다')
+  await expect(banner.getByRole('link', { name: '테스트기업' })).toBeVisible()
+  // 헤더 배지는 다른 화면에서도 보인다
+  await expect(page.getByTitle(/구역 추출 실패 1건/)).toBeVisible()
+})
+
 test('분석 현황 화면에 콘솔 에러 없음', async ({ page }) => {
   const errors = []
   page.on('console', m => m.type() === 'error' && errors.push(m.text()))

@@ -10,12 +10,14 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.constants import AnalysisStatus
+from app.config import settings
+from app.constants import EXTRACTION_FAILED_PREFIX, AnalysisStatus
 from app.database import SessionLocal
 from app.models import Analysis, BatchJob
 from app.services import analysis_service as svc
 from app.services import gemini_batch as batch
 from app.services.report_service import extract_text_from_report
+from app.services.section_extract import ExtractionFailed, extract as extract_sections
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +95,17 @@ def _build_request(db: Session, report_id: int) -> str | None:
         raw_text = extract_text_from_report(pending[0].report.file_path)
         if not raw_text:
             raise ValueError("보고서 텍스트를 추출할 수 없습니다.")
+
+        if settings.section_extract_enabled:
+            # 구역 추출에 실패하면 LLM으로 보내지 않는다 — 서식이 바뀐 채로 전문을
+            # 흘려보내면 아무도 모르게 비용만 나간다. 실패를 드러내 소스를 고치게 한다.
+            try:
+                raw_text = extract_sections(raw_text)
+            except ExtractionFailed as e:
+                logger.error("구역 추출 실패: report_id=%d — %s", report_id, e)
+                svc.mark_failed(db, pending, f"{EXTRACTION_FAILED_PREFIX}{e}")
+                return None
+
         system, user, max_out = svc.build_prompts(
             db, pending[0].report, [a.analysis_type for a in pending], raw_text
         )

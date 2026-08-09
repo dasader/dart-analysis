@@ -3,11 +3,12 @@ import json
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.constants import EXTRACTION_FAILED_PREFIX, AnalysisStatus
 from app.crud import get_or_404
 from app.database import get_db
 from app.dependencies import require_admin
-from app.models import BatchJob
-from app.schemas import BatchJobResponse
+from app.models import Analysis, BatchJob, Company, Report
+from app.schemas import BatchJobResponse, ExtractionFailure
 from app.services import gemini_batch as batch
 
 router = APIRouter(tags=["batches"])
@@ -46,3 +47,38 @@ async def cancel_batch(batch_id: int, db: Session = Depends(get_db)):
 
     await batch.cancel(job.job_name)
     return {"message": "취소를 요청했습니다. 잠시 후 상태가 갱신됩니다."}
+
+
+@router.get("/api/batches/extraction-failures", response_model=list[ExtractionFailure])
+def list_extraction_failures(db: Session = Depends(get_db)):
+    """구역 추출에 실패해 LLM에 보내지 못한 보고서 목록.
+
+    보고서 서식이 바뀌었다는 신호이므로 화면 상단에 눈에 띄게 알린다
+    (추출기 수정이 필요하다는 뜻이다).
+    """
+    rows = (
+        db.query(Analysis, Report, Company)
+        .join(Report, Analysis.report_id == Report.id)
+        .join(Company, Analysis.company_id == Company.id)
+        .filter(
+            Analysis.status == AnalysisStatus.FAILED,
+            Analysis.error_message.startswith(EXTRACTION_FAILED_PREFIX),
+        )
+        .order_by(Analysis.updated_at.desc())
+        .all()
+    )
+    # 보고서 1건에 분석 3종이 함께 실패하므로 보고서 단위로 접는다
+    seen: dict[int, ExtractionFailure] = {}
+    for analysis, report, company in rows:
+        if report.id in seen:
+            continue
+        seen[report.id] = ExtractionFailure(
+            report_id=report.id,
+            company_id=company.id,
+            corp_name=company.corp_name,
+            report_name=report.report_name,
+            fiscal_year=report.fiscal_year,
+            reason=analysis.error_message.removeprefix(EXTRACTION_FAILED_PREFIX),
+            failed_at=analysis.updated_at,
+        )
+    return list(seen.values())

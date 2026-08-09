@@ -65,6 +65,7 @@ FRONTEND_PORT=8116
 SCHEDULER_INTERVAL_HOURS=24  # 신규 보고서 자동 수집 주기
 BATCH_POLL_INTERVAL_SECS=60  # batch 작업 상태 확인 주기
 SCHEDULER_AUTO_ANALYZE=false # 수집한 신규 보고서를 자동 분석할지
+SECTION_EXTRACT_ENABLED=true # 분석에 필요한 구역만 추려 LLM에 전달 (입력 ~87% 절감)
 ADMIN_KEY=                   # 관리 기능 보호용 키 (비우면 인증 비활성화)
 ```
 
@@ -88,7 +89,7 @@ routers/
   analyses.py    분석 요청·조회·큐 상태 (분석 요청은 관리자 전용)
   scheduler.py   스케줄러 상태 조회·즉시 실행 (즉시 실행은 관리자 전용)
   prompts.py     프롬프트 템플릿 CRUD (수정은 관리자 전용)
-  batches.py     batch 작업 목록·취소 (취소는 관리자 전용)
+  batches.py     batch 작업 목록·취소·구역추출 실패 목록 (취소는 관리자 전용)
   tags.py        태그 CRUD (삭제는 관리자 전용)
   admin.py       GET /api/admin/verify — 관리자 키 검증
 
@@ -96,6 +97,7 @@ services/
   dart_client.py      OpenDART API 연동 (corpCode.xml ZIP 파싱, list.json, document.xml)
   report_service.py   ZIP 다운로드·추출, XML/HTML 텍스트 추출
   gemini_batch.py     Gemini Batch API — JSONL 빌드·업로드·제출·상태조회·결과 파싱
+  section_extract.py  보고서에서 분석에 쓰이는 구역(I·II·XII)만 추출. 실패 시 예외
   batch_poller.py     진행 중 BatchJob 상태 확인 → 완료 시 결과를 Analysis에 분배
   analysis_service.py 프롬프트 조립(build_prompts)·결과 저장(save_result)·JSON 추출
   analysis_queue.py   asyncio.Queue — 요청을 5초 창으로 모아 batch 1건으로 제출
@@ -174,6 +176,24 @@ components/
 - `document.xml` → 보고서 ZIP 다운로드, `{DATA_DIR}/reports/{corp_code}/{fiscal_year}/{rcept_no}.zip` 저장
 - 보고서 ZIP 다운로드 엔드포인트: `GET /api/reports/{id}/download` → `Content-Disposition` 헤더로 `회사명_연도_사업보고서.zip` 파일명 설정
 
+### 구역 추출
+
+보고서 전문을 그대로 보내면 입력의 대부분이 재무제표·임원 명단이라 3종 분석에 쓸모가 없다.
+`section_extract.py`가 대제목 기준으로 **I(회사의 개요) · II(사업의 내용) · XII(상세표)**만 남긴다.
+
+- 7개 기업 실측: 원문 대비 **8~21%**로 축소. 품질은 유지되거나 소폭 향상
+  (SK하이닉스 기준 입력 418,637 → 52,192토큰, 골든 21개 중 적중 14~15 → 15~17)
+- 대제목은 같은 문구가 목차·본문·재무제표 안에 여러 번 나온다. **정규 순서(I→XII)로
+  이어지는 체인 중 가장 넓게 퍼진 것**을 본문으로 고른다 — 목차는 12개가 수천 자 안에
+  몰려 있어 자연히 탈락하고, 목차가 없는 보고서도 같은 규칙으로 처리된다
+- 마지막 구역(XII) 뒤에는 감사보고서가 이어지므로 `【 전문가의 확인 】`으로 자른다
+
+**추출 실패는 LLM으로 넘기지 않는다.** 필수 구역을 못 찾거나, 거의 줄지 않았거나(>70%),
+지나치게 짧으면(<20,000자) `ExtractionFailed`를 던지고 해당 분석을 failed로 둔다.
+조용히 전문을 흘려보내면 서식이 바뀐 걸 아무도 모른 채 비용만 나가기 때문이다.
+실패는 `[구역추출실패]` 접두어가 붙어 `/settings/batches` 경고 배너와 헤더 배지로 드러난다
+— 이 알림이 뜨면 `section_extract.py`의 규칙을 고쳐야 한다는 뜻이다.
+
 ### Gemini 모델 및 한도
 
 - 모델: `gemini-3.5-flash-lite`, thinking level `MINIMAL`
@@ -184,6 +204,7 @@ components/
   실측 **1.49자/토큰**이라 약 94만 토큰 — 컨텍스트 상한 1,048,576에 근접하니 늘리지 마라
 - 출력 토큰: 분석 유형당 8,192 × 유형 수 (combined 시 최대 24,576)
 - Batch API는 표준 대비 **50% 할인**. 실측 turnaround 8.3분 (문서상 SLO는 24시간)
+- 보고서 1건당 실측 비용: **$0.0135** (구역추출 + batch). 전환 전 구성 대비 88% 절감
 - batch 작업은 pending/running 48시간 초과 시 `JOB_STATE_EXPIRED`로 만료된다 (자동 재시도 없음)
 
 **모델 선정 근거** (실제 SK하이닉스 2024년 사업보고서로 30회 실측):

@@ -1,15 +1,27 @@
 import { useEffect, useState } from "react";
 import { Link, Outlet } from "react-router-dom";
-import { fetchSchedulerStatus } from "../api/client";
+import { fetchExtractionFailures, fetchSchedulerStatus } from "../api/client";
 import type { SchedulerStatus } from "../types";
 import { useAdmin } from "../context/AdminContext";
 
 export default function Layout() {
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
+  const [failureCount, setFailureCount] = useState(0);
 
   // 스케줄러 가동 여부는 거의 변하지 않으므로 마운트 시 1회만 조회
   useEffect(() => {
     fetchSchedulerStatus().then(setScheduler).catch(() => {});
+  }, []);
+
+  // 구역 추출 실패는 보고서 서식 변경 신호 — 어느 화면에 있든 눈에 띄어야 한다
+  useEffect(() => {
+    const check = () =>
+      fetchExtractionFailures()
+        .then((f) => setFailureCount(f.length))
+        .catch(() => {});
+    check();
+    const timer = setInterval(check, 60000);
+    return () => clearInterval(timer);
   }, []);
 
   const { isAdmin, login, logout } = useAdmin();
@@ -51,6 +63,14 @@ export default function Layout() {
             )}
             <Link to="/settings/batches" className="nav-link">
               분석 현황
+              {failureCount > 0 && (
+                <span
+                  title={`구역 추출 실패 ${failureCount}건 — 보고서 서식 확인 필요`}
+                  className="ml-1.5 rounded-full bg-amber-400 px-1.5 py-0.5 text-xs font-semibold text-amber-950"
+                >
+                  {failureCount}
+                </span>
+              )}
             </Link>
             <Link to="/tags" className="nav-link">
               태그 관리
