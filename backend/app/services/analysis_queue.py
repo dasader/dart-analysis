@@ -106,8 +106,9 @@ def _build_request(db: Session, report_id: int) -> str | None:
                 svc.mark_failed(db, pending, f"{EXTRACTION_FAILED_PREFIX}{e}")
                 return None
 
+        types_to_run = [a.analysis_type for a in pending]
         system, user, max_out = svc.build_prompts(
-            db, pending[0].report, [a.analysis_type for a in pending], raw_text
+            db, pending[0].report, types_to_run, raw_text
         )
     except Exception as e:
         logger.exception("요청 생성 실패: report_id=%d", report_id)
@@ -117,7 +118,7 @@ def _build_request(db: Session, report_id: int) -> str | None:
     for a in pending:
         a.status = AnalysisStatus.RUNNING
     db.commit()
-    return batch.build_jsonl_line(str(report_id), system, user, max_out)
+    return batch.build_jsonl_line(str(report_id), system, user, max_out, types_to_run)
 
 
 async def _drain(first: int) -> list[int]:

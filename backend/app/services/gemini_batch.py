@@ -41,11 +41,18 @@ def _get_client() -> genai.Client:
     return _client
 
 
-def build_jsonl_line(key: str, system_prompt: str, user_prompt: str, max_output_tokens: int) -> str:
+def build_jsonl_line(
+    key: str, system_prompt: str, user_prompt: str, max_output_tokens: int,
+    analysis_types: list[str],
+) -> str:
     """batch 요청 1줄을 만든다.
 
     JSONL은 REST 원형 스키마다 — systemInstruction은 top-level, maxOutputTokens와
     thinkingConfig는 generationConfig 안. (inline 방식의 평면 config와 형태가 다르다.)
+
+    responseSchema를 거는 이유: 분석 본문에 보고서 인용이 많아 큰따옴표가 섞이는데,
+    모델이 JSON 문자열 안에서 이스케이프를 놓쳐 응답 전체가 깨지는 일이 잦았다
+    (실측 3회 중 2회). 스키마를 걸면 API가 JSON 유효성을 보장한다.
     """
     return json.dumps({
         "key": key,
@@ -55,6 +62,12 @@ def build_jsonl_line(key: str, system_prompt: str, user_prompt: str, max_output_
             "generationConfig": {
                 "maxOutputTokens": max_output_tokens,
                 "thinkingConfig": {"thinkingLevel": THINKING_LEVEL},
+                "responseMimeType": "application/json",
+                "responseSchema": {
+                    "type": "OBJECT",
+                    "properties": {t: {"type": "STRING"} for t in analysis_types},
+                    "required": list(analysis_types),
+                },
             },
         },
     }, ensure_ascii=False)

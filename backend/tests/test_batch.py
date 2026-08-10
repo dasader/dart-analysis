@@ -7,9 +7,12 @@ from app.services.analysis_service import extract_json
 from app.services.gemini_batch import build_jsonl_line, parse_result_line
 
 
+TYPES = ["subsidiary", "rnd", "national_tech"]
+
+
 def test_jsonl_line_uses_rest_schema():
     """JSONL은 REST 원형 — systemInstruction은 top-level, thinking은 generationConfig 안."""
-    line = build_jsonl_line("42", "시스템 지침", "보고서 본문", 24576)
+    line = build_jsonl_line("42", "시스템 지침", "보고서 본문", 24576, TYPES)
     obj = json.loads(line)
 
     assert obj["key"] == "42"
@@ -20,9 +23,25 @@ def test_jsonl_line_uses_rest_schema():
     assert req["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "MINIMAL"
 
 
+def test_jsonl_line_pins_response_schema():
+    """분석 본문에 인용 큰따옴표가 많아 모델이 JSON을 깨뜨린다 — API가 막게 한다."""
+    req = json.loads(build_jsonl_line("1", "s", "u", 100, TYPES))["request"]
+    gc = req["generationConfig"]
+    assert gc["responseMimeType"] == "application/json"
+    assert set(gc["responseSchema"]["properties"]) == set(TYPES)
+    assert set(gc["responseSchema"]["required"]) == set(TYPES)
+    assert gc["responseSchema"]["properties"]["rnd"]["type"] == "STRING"
+
+
+def test_jsonl_line_schema_follows_requested_types():
+    """일부 유형만 재분석할 때는 그 유형만 스키마에 들어가야 한다."""
+    req = json.loads(build_jsonl_line("1", "s", "u", 100, ["rnd"]))["request"]
+    assert list(req["generationConfig"]["responseSchema"]["properties"]) == ["rnd"]
+
+
 def test_jsonl_line_keeps_korean_readable():
     """ensure_ascii=False — 한국어가 이스케이프되면 파일 크기가 3배가 된다."""
-    assert "종속회사" in build_jsonl_line("1", "종속회사 분석", "본문", 100)
+    assert "종속회사" in build_jsonl_line("1", "종속회사 분석", "본문", 100, TYPES)
 
 
 def test_parse_success():
