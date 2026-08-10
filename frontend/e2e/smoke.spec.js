@@ -35,6 +35,15 @@ test('설정 화면: 동작 토글은 상태를 드러내고 미로그인 시 �
   await expect(page.getByRole('switch', { name: '신규 보고서 자동 분석' })).toBeVisible()
 })
 
+test('보고서 상세: 없는 보고서로 들어가도 깨지지 않는다', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', e => errors.push(String(e)))
+  await page.goto('/companies/999999/reports/999999', { waitUntil: 'networkidle' })
+  await expect(page.getByText('보고서를 찾을 수 없습니다')).toBeVisible()
+  await expect(page.getByRole('link', { name: '기업으로 돌아가기' })).toBeVisible()
+  expect(errors, '페이지 에러').toEqual([])
+})
+
 test('관리 기능은 로그인 전 안내를 노출', async ({ page }) => {
   await page.goto('/tags')
   await expect(page.getByText('관리자 로그인이 필요합니다')).toBeVisible()

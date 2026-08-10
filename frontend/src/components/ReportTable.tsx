@@ -1,22 +1,50 @@
 import { useMemo, useState } from "react";
-import type { Report } from "../types";
+import { Link } from "react-router-dom";
+import type { Analysis, Report } from "../types";
 import { ANALYSIS_TYPE_KEYS } from "../types";
 import { useSort, SortIcon } from "../hooks/useSort";
 import AdminButton from "./AdminButton";
 
 interface Props {
+  companyId: number;
   reports: Report[];
+  /** 기업의 전체 분석 — 보고서별 진행 상태를 여기서 파생한다 */
+  analyses: Analysis[];
   analyzing?: boolean;
   onAnalyze: (reportId: number) => void;
   onDelete: (reportId: number) => void;
   onRedownload: (reportId: number) => void;
 }
 
+/** 보고서 1건의 분석 3종을 한 줄 상태로 접는다. */
+function analysisSummary(analyses: Analysis[]) {
+  if (analyses.length === 0) return { text: "—", cls: "text-text-tertiary", icon: "" };
+  if (analyses.some((a) => a.status === "running" || a.status === "pending"))
+    return { text: "처리중", cls: "text-warning", icon: "◐" };
+  if (analyses.some((a) => a.status === "failed"))
+    return { text: "실패", cls: "text-danger", icon: "●" };
+
+  const done = analyses.filter((a) => a.status === "completed").length;
+  if (done >= ANALYSIS_TYPE_KEYS.length)
+    return { text: "완료", cls: "text-success", icon: "●" };
+  return { text: `${done}/${ANALYSIS_TYPE_KEYS.length}`, cls: "text-warning", icon: "◐" };
+}
+
 type SortKey = "filing_date" | "fiscal_year";
 
-export default function ReportTable({ reports, analyzing = false, onAnalyze, onDelete, onRedownload }: Props) {
+export default function ReportTable({ companyId, reports, analyses, analyzing = false, onAnalyze, onDelete, onRedownload }: Props) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const { sortKey, sortDir, toggleSort, compare } = useSort<SortKey>("fiscal_year", "desc");
+
+  const byReport = useMemo(() => {
+    const m = new Map<number, Analysis[]>();
+    for (const a of analyses) {
+      const list = m.get(a.report_id);
+      if (list) list.push(a);
+      else m.set(a.report_id, [a]);
+    }
+    return m;
+  }, [analyses]);
 
   const sorted = useMemo(() => {
     return [...reports].sort((a, b) => {
@@ -81,7 +109,12 @@ export default function ReportTable({ reports, analyzing = false, onAnalyze, onD
                   className={`border-b border-border transition-colors last:border-b-0 hover:bg-background/30 ${isAmendment ? "opacity-60" : ""}`}
                 >
                   <td className="px-5 py-3.5 font-medium text-text-primary">
-                    <span className={r.file_path ? "" : "text-text-tertiary"}>{r.report_name}</span>
+                    <Link
+                      to={`/companies/${companyId}/reports/${r.id}`}
+                      className={`hover:text-accent hover:underline ${r.file_path ? "" : "text-text-tertiary"}`}
+                    >
+                      {r.report_name}
+                    </Link>
                     {isAmendment && (
                       <span
                         className="ml-2 inline-flex rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning"
@@ -98,17 +131,14 @@ export default function ReportTable({ reports, analyzing = false, onAnalyze, onD
                     {r.filing_date || "—"}
                   </td>
                   <td className="px-5 py-3.5 text-center">
-                    {r.analysis_count >= ANALYSIS_TYPE_KEYS.length ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-success">
-                        <span>●</span> 완료
-                      </span>
-                    ) : r.analysis_count > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-warning">
-                        <span>◐</span> 일부
-                      </span>
-                    ) : (
-                      <span className="text-xs text-text-tertiary">—</span>
-                    )}
+                    {(() => {
+                      const s = analysisSummary(byReport.get(r.id) ?? []);
+                      return (
+                        <span className={`inline-flex items-center gap-1 text-xs ${s.cls}`}>
+                          {s.icon && <span>{s.icon}</span>} {s.text}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-5 py-3.5 text-right">
                     <div className="flex items-center justify-end gap-3">

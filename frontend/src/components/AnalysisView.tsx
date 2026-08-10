@@ -1,30 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { analyzeReport } from "../api/client";
 import AdminButton from "./AdminButton";
-import { getErrorMessage } from "../lib/errors";
-import {
-  ANALYSIS_TYPE_KEYS,
-  ANALYSIS_TYPE_LABELS,
-  PRINT_TYPE_LABELS,
-} from "../types";
-import type { Analysis, AnalysisType, Report } from "../types";
+import type { Analysis } from "../types";
 
 interface Props {
-  companyName: string;
-  reports: Report[];
-  analyses: Analysis[];
-  analysisType: AnalysisType;
-  onRefresh: () => void;
+  /** 이 보고서·이 유형의 분석. 아직 요청된 적 없으면 undefined */
+  analysis: Analysis | undefined;
+  onRun: () => void;
+  running: boolean;
 }
-
-const STATUS_LABELS: Record<string, { text: string; color: string }> = {
-  pending: { text: "대기중", color: "text-text-tertiary bg-gray-100" },
-  running: { text: "분석중", color: "text-warning bg-warning-bg" },
-  completed: { text: "완료", color: "text-success bg-success-bg" },
-  failed: { text: "실패", color: "text-danger bg-danger-bg" },
-};
 
 const PROSE_CLASSES = `
   prose prose-sm max-w-none
@@ -43,295 +27,67 @@ const PROSE_CLASSES = `
   prose-code:text-accent prose-code:bg-background prose-code:px-1 prose-code:rounded
 `.trim();
 
-export default function AnalysisView({
-  companyName,
-  reports,
-  analyses,
-  analysisType,
-  onRefresh,
-}: Props) {
-  const relevantAnalyses = useMemo(
-    () => analyses.filter((a) => a.analysis_type === analysisType),
-    [analyses, analysisType],
-  );
-
-  // pending 또는 running 상태가 있으면 5초마다 자동 폴링
-  const hasActiveJob = relevantAnalyses.some(
-    (a) => a.status === "pending" || a.status === "running",
-  );
-  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
-
-  useEffect(() => {
-    if (hasActiveJob) {
-      intervalRef.current = setInterval(onRefresh, 5000);
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [hasActiveJob, onRefresh]);
-
-  const reportById = useMemo(
-    () => new Map(reports.map((r) => [r.id, r])),
-    [reports],
-  );
-
-  const years = useMemo(
-    () =>
-      [
-        ...new Set(
-          reports
-            .filter((r) => relevantAnalyses.some((a) => a.report_id === r.id))
-            .map((r) => r.fiscal_year),
-        ),
-      ].sort((a, b) => b - a),
-    [reports, relevantAnalyses],
-  );
-
-  // 사용자가 고른 연도만 보관하고, 실제 표시 연도는 매 렌더 파생 (보정용 effect 불필요)
-  const [userSelectedYear, setUserSelectedYear] = useState<number | null>(null);
-  const [runningId, setRunningId] = useState<number | null>(null);
-
-  const selectedYear =
-    userSelectedYear !== null && years.includes(userSelectedYear)
-      ? userSelectedYear
-      : years[0] ?? null;
-
-  const selectedReport = reports.find((r) => r.fiscal_year === selectedYear);
-  const selectedAnalysis = relevantAnalyses.find(
-    (a) => selectedReport && a.report_id === selectedReport.id,
-  );
-
-  // 인쇄용: 선택된 연도의 완료된 3가지 분석을 고정 순서로
-  const printAnalyses = useMemo(
-    () =>
-      selectedReport
-        ? (ANALYSIS_TYPE_KEYS.map((type) =>
-            analyses.find(
-              (a) =>
-                a.report_id === selectedReport.id &&
-                a.analysis_type === type &&
-                a.status === "completed",
-            ),
-          ).filter(Boolean) as Analysis[])
-        : [],
-    [selectedReport, analyses],
-  );
-
-  // 해당 보고서에 완료된 분석 결과가 있으면 true
-  const hasCompletedResult = (reportId: number) =>
-    analyses.some((a) => a.report_id === reportId && a.status === "completed");
-
-  const handleRun = async (reportId: number, requireConfirm = false) => {
-    if (requireConfirm && hasCompletedResult(reportId)) {
-      if (!confirm(
-        "이미 분석 결과가 있습니다.\n재분석하면 3가지 분석(종속회사·R&D·국가전략기술)이 모두 덮어쓰여집니다.\n계속하시겠습니까?"
-      )) return;
-    }
-    setRunningId(reportId);
-    try {
-      await analyzeReport(reportId);
-      onRefresh();
-    } catch (e) {
-      alert(getErrorMessage(e));
-    } finally {
-      setRunningId(null);
-    }
-  };
-
-  const unanalyzedReports = useMemo(
-    () =>
-      reports.filter(
-        (r) => r.file_path && !relevantAnalyses.some((a) => a.report_id === r.id),
-      ),
-    [reports, relevantAnalyses],
-  );
-
-  // 선택된 분석 상태에 따른 본문 (중첩 삼항 대신 early return으로 평탄화)
-  const renderContent = () => {
-    if (selectedAnalysis?.status === "completed") {
-      return (
-        <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
-          <div className="mb-4 flex items-center gap-3 border-b border-border pb-4">
-            <span className="text-xs text-text-tertiary">
-              분석일:{" "}
-              {new Date(selectedAnalysis.updated_at).toLocaleDateString("ko-KR")}
-            </span>
-          </div>
-          <article className={PROSE_CLASSES}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {selectedAnalysis.result_summary || ""}
-            </ReactMarkdown>
-          </article>
-        </div>
-      );
-    }
-
-    if (
-      selectedAnalysis &&
-      (selectedAnalysis.status === "pending" || selectedAnalysis.status === "running")
-    ) {
-      return (
-        <div className="flex flex-col items-center rounded-xl border border-border bg-surface py-16">
-          <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent" />
-          <p className="text-sm text-text-secondary">
-            {selectedAnalysis.status === "pending"
-              ? "큐에서 대기 중입니다..."
-              : "Gemini가 보고서를 분석하고 있습니다..."}
-          </p>
-          <p className="mt-1 text-xs text-text-tertiary">
-            이 페이지를 벗어나도 분석은 계속 진행됩니다.
-          </p>
-        </div>
-      );
-    }
-
-    if (selectedAnalysis?.status === "failed") {
-      return (
-        <div className="rounded-xl border border-danger/30 bg-danger-bg p-6">
-          <p className="mb-2 font-medium text-danger">분석 실패</p>
-          <p className="text-sm text-text-secondary">
-            {selectedAnalysis.error_message}
-          </p>
-          <AdminButton
-            onClick={() => handleRun(selectedAnalysis.report_id)}
-            className="btn btn-action mt-4"
-          >
-            재시도
-          </AdminButton>
-        </div>
-      );
-    }
-
+/** 보고서 1건 × 분석 유형 1개의 결과를 상태에 따라 보여준다. */
+export default function AnalysisView({ analysis, onRun, running }: Props) {
+  if (analysis?.status === "completed") {
     return (
-      <div className="rounded-xl border border-border bg-surface py-16 text-center">
-        {unanalyzedReports.length > 0 ? (
-          <div>
-            <p className="mb-4 text-sm text-text-tertiary">
-              아직 이 유형의 분석이 수행되지 않았습니다.
-            </p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {unanalyzedReports.map((r) => (
-                <AdminButton
-                  key={r.id}
-                  disabled={runningId === r.id}
-                  onClick={() => handleRun(r.id)}
-                  className="btn btn-action"
-                >
-                  {runningId === r.id ? "요청 중..." : `${r.fiscal_year} ${r.report_type} 분석`}
-                </AdminButton>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-text-tertiary">
-            보고서를 먼저 다운로드해주세요.
-          </p>
-        )}
+      <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
+        <div className="mb-4 flex items-center gap-3 border-b border-border pb-4">
+          <span className="text-xs text-text-tertiary">
+            분석일: {new Date(analysis.updated_at).toLocaleDateString("ko-KR")}
+          </span>
+          {analysis.model_name && (
+            <span className="font-mono text-xs text-text-tertiary">
+              {analysis.model_name}
+            </span>
+          )}
+        </div>
+        <article className={PROSE_CLASSES}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {analysis.result_summary || ""}
+          </ReactMarkdown>
+        </article>
       </div>
     );
-  };
+  }
+
+  if (analysis && (analysis.status === "pending" || analysis.status === "running")) {
+    return (
+      <div className="flex flex-col items-center rounded-xl border border-border bg-surface py-16">
+        <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent" />
+        <p className="text-sm text-text-secondary">
+          {analysis.status === "pending"
+            ? "제출 대기 중입니다..."
+            : "Batch 처리 중입니다..."}
+        </p>
+        {/* 실시간 호출이 아니라 Batch라 분 단위가 걸린다 — 기다려도 된다고 알린다 */}
+        <p className="mt-1 text-xs text-text-tertiary">
+          보통 수 분 내 완료됩니다. 이 페이지를 벗어나도 계속 진행됩니다.
+        </p>
+      </div>
+    );
+  }
+
+  if (analysis?.status === "failed") {
+    return (
+      <div className="rounded-xl border border-danger/30 bg-danger-bg p-6">
+        <p className="mb-2 font-medium text-danger">분석 실패</p>
+        <p className="text-sm text-text-secondary">{analysis.error_message}</p>
+        <AdminButton onClick={onRun} disabled={running} className="btn btn-action mt-4">
+          {running ? "요청 중..." : "재시도"}
+        </AdminButton>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      {/* ───── 화면 UI (인쇄 제외) ───── */}
-      <div className="no-print">
-        <div className="mb-6 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-navy">
-            {ANALYSIS_TYPE_LABELS[analysisType]}
-          </h3>
-          <div className="flex items-center gap-3">
-            {hasActiveJob && (
-              <span className="flex items-center gap-1.5 text-sm text-warning">
-                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-warning" />
-                처리중...
-              </span>
-            )}
-            {selectedReport && (
-              <AdminButton
-                disabled={runningId === selectedReport.id}
-                onClick={() => handleRun(selectedReport.id, true)}
-                className="btn btn-outline btn-sm"
-                title="3가지 분석 항목을 Gemini 1회 호출로 일괄 재분석"
-              >
-                {runningId === selectedReport.id ? "요청 중..." : "전체 재분석"}
-              </AdminButton>
-            )}
-            {printAnalyses.length > 0 && (
-              <button
-                onClick={() => window.print()}
-                className="btn btn-outline btn-sm"
-                title={`${selectedYear}년 분석 결과 ${printAnalyses.length}건 PDF 출력`}
-              >
-                PDF 출력
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Year chips */}
-        {years.length > 0 && (
-          <div className="mb-6 flex flex-wrap gap-2">
-            {years.map((y) => {
-              const yearAnalysis = relevantAnalyses.find(
-                (a) => reportById.get(a.report_id)?.fiscal_year === y,
-              );
-              const statusInfo = yearAnalysis
-                ? STATUS_LABELS[yearAnalysis.status]
-                : null;
-              return (
-                <button
-                  key={y}
-                  onClick={() => setUserSelectedYear(y)}
-                  className={selectedYear === y ? "chip chip-active" : "chip"}
-                >
-                  {y}
-                  {statusInfo && yearAnalysis?.status !== "completed" && (
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-[10px] ${statusInfo.color}`}
-                    >
-                      {statusInfo.text}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Analysis Content */}
-        {renderContent()}
-      </div>
-
-      {/* ───── 인쇄 전용 통합 보고서 ───── */}
-      {printAnalyses.length > 0 && (
-        <div className="print-only">
-          {/* 커버 헤더 */}
-          <div className="print-cover">
-            <h1 className="print-company">{companyName}</h1>
-            <p className="print-subtitle">{selectedYear}년 사업보고서 AI 분석</p>
-            <p className="print-meta">
-              분석일:{" "}
-              {new Date(printAnalyses[0].updated_at).toLocaleDateString("ko-KR")}
-            </p>
-          </div>
-
-          {/* 3가지 분석 섹션 */}
-          {printAnalyses.map((analysis, idx) => (
-            <div key={analysis.id} className={idx > 0 ? "print-page-break" : ""}>
-              <h2 className="print-section-title">
-                {idx + 1}. {PRINT_TYPE_LABELS[analysis.analysis_type]}
-              </h2>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {analysis.result_summary || ""}
-              </ReactMarkdown>
-            </div>
-          ))}
-
-          <footer className="print-footer">
-            DART 사업보고서 AI 분석 보고서 — 자동 생성됨
-          </footer>
-        </div>
-      )}
+    <div className="rounded-xl border border-border bg-surface py-16 text-center">
+      <p className="mb-4 text-sm text-text-tertiary">
+        아직 이 유형의 분석이 수행되지 않았습니다.
+      </p>
+      <AdminButton onClick={onRun} disabled={running} className="btn btn-action">
+        {running ? "요청 중..." : "분석 실행"}
+      </AdminButton>
     </div>
   );
 }

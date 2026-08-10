@@ -104,6 +104,10 @@ export function fetchCompanyAnalyses(companyId: number): Promise<Analysis[]> {
   return request(`/companies/${companyId}/analyses`);
 }
 
+export function fetchReportAnalyses(reportId: number): Promise<Analysis[]> {
+  return request(`/reports/${reportId}/analyses`);
+}
+
 export function analyzeReport(
   reportId: number,
 ): Promise<{ message: string; queued: number }> {

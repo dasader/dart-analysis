@@ -145,6 +145,25 @@ services/
 - **수집**: 사업보고서만
 - **제외**: 반기보고서, 분기보고서, 정정보고서 (`"정정"` 포함 시 제외)
 
+### 화면 계층
+
+보고서가 부모, 분석 3종이 자식이다. 분석은 특정 보고서(=특정 연도)에 딸린 결과이므로
+같은 층에 나란히 두지 않는다.
+
+```
+/                                  기업 목록
+/companies/:id                     기업 상세 — 사업보고서 목록만
+/companies/:id/reports/:reportId   보고서 상세 — 분석 3종 탭
+```
+
+연도 선택은 보고서 목록에서 한 번만 한다. 예전에는 분석 유형 탭마다 연도 선택기가
+따로 있어 탭을 옮길 때마다 연도를 다시 골라야 했다.
+
+**진행 상태 폴링**: pending·running이 하나라도 있으면 10초 간격으로 갱신한다.
+기업 상세는 보고서와 분석을 **함께** 받아야 목록의 분석 상태가 같이 최신이 된다
+(보고서만 따로 받으면 `analysis_count`가 옛날 값으로 남는다).
+Batch는 분 단위라 5초 폴링은 과하다.
+
 ### 프론트엔드 (`frontend/src/`)
 
 ```
@@ -154,15 +173,16 @@ context/AdminContext.tsx  AdminProvider + useAdmin() — isAdmin·login·logout
 types/           TypeScript 인터페이스
 pages/
   CompanyList.tsx    기업 목록 CRUD, 컬럼별 정렬 (기업명·코드·보고서수·분석일)
-  CompanyDetail.tsx  탭(보고서·분석 3종), 토스트 알림, 분석 상태 관리
+  CompanyDetail.tsx  기업 상세 — 사업보고서 목록. 진행 중이면 10초 폴링(보고서+분석 동시)
+  ReportDetail.tsx   /companies/:id/reports/:reportId — 분석 3종 탭·재분석·PDF 출력
   PromptSettings.tsx 동작 설정 토글 + 프롬프트 템플릿 편집
   BatchList.tsx      /settings/batches — batch 작업 현황·취소 (15초 폴링)
   SettingToggles.tsx 동작 설정 토글 — 끄면 비용이 느는 항목은 확인 후 변경
 components/
-  ReportTable.tsx      정렬·분석·재다운로드·삭제, 보고서명 클릭 시 ZIP 다운로드
-  AnalysisView.tsx     분석 결과 표시, 5초 폴링, ReactMarkdown + remark-gfm, 인쇄 전용 통합 뷰
+  ReportTable.tsx      정렬·분석·재다운로드·삭제. 보고서명 클릭 시 보고서 상세로 이동.
+                       분석 열은 analysis_count가 아니라 실제 분석 상태에서 파생
+  AnalysisView.tsx     보고서 1건 × 분석 1종의 결과 렌더 (ReactMarkdown + remark-gfm)
   AdminButton.tsx      관리 버튼 래퍼 — 미로그인 시 disabled + "관리자 로그인이 필요합니다" 툴팁
-  PrintableReport.tsx  (미사용 — AnalysisView 내 인라인으로 대체됨)
   CompanySearch.tsx    OpenDART 기업 검색 자동완성
   CompanyEditModal.tsx 기업 정보 수정 모달
   DownloadModal.tsx    보고서 다운로드 연도 선택 (사업보고서 고정)
@@ -170,7 +190,8 @@ components/
 
 **CSS**: Tailwind v4 (`@import "tailwindcss"` + `@plugin "@tailwindcss/typography"`), `@theme` 블록에 커스텀 색상 변수 정의. 폰트: Pretendard(한글) + DM Sans(영문) + JetBrains Mono — mono 폰트 스택에 Pretendard 포함하여 한글 fallback 처리.
 
-**인쇄**: `window.print()` 호출 시 화면 UI는 `no-print`로 숨기고, `print-only` 클래스의 통합 보고서(선택 연도 3개 분석)만 출력. 표 깨짐 방지를 위해 `index.css`에 전용 `@media print` 스타일 정의.
+**인쇄**: 보고서 상세에서 `window.print()` 호출 시 화면 UI는 `no-print`로 숨기고,
+`print-only` 클래스의 통합 보고서(그 보고서의 분석 3종)만 출력. 표 깨짐 방지를 위해 `index.css`에 전용 `@media print` 스타일 정의.
 
 ### OpenDART API
 
