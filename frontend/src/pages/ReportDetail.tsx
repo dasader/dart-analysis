@@ -9,6 +9,7 @@ import {
 import AnalysisView from "../components/AnalysisView";
 import AdminButton from "../components/AdminButton";
 import { getErrorMessage } from "../lib/errors";
+import { normalizeTables } from "../lib/markdown";
 import {
   ANALYSIS_TYPE_KEYS,
   ANALYSIS_TYPE_LABELS,
@@ -229,7 +230,7 @@ export default function ReportDetail() {
                 {idx + 1}. {PRINT_TYPE_LABELS[analysis.analysis_type]}
               </h2>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {analysis.result_summary || ""}
+                {normalizeTables(analysis.result_summary || "")}
               </ReactMarkdown>
             </div>
           ))}

@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import AdminButton from "./AdminButton";
+import { normalizeTables } from "../lib/markdown";
 import type { Analysis } from "../types";
 
 interface Props {
@@ -44,7 +45,7 @@ export default function AnalysisView({ analysis, onRun, running }: Props) {
         </div>
         <article className={PROSE_CLASSES}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {analysis.result_summary || ""}
+            {normalizeTables(analysis.result_summary || "")}
           </ReactMarkdown>
         </article>
       </div>

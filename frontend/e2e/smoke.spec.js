@@ -44,6 +44,39 @@ test('보고서 상세: 없는 보고서로 들어가도 깨지지 않는다', a
   expect(errors, '페이지 에러').toEqual([])
 })
 
+test('구분선 빠진 표도 실제 표로 렌더된다', async ({ page }) => {
+  // 모델이 헤더 아래 |---|를 빠뜨리는 경우가 실측 16%였다. 그래도 표로 보여야 한다.
+  const broken = [
+    '## 종속회사 목록',
+    '| 회사명 | 소재지 | 지분율(%) |',
+    '| 두산밥캣 | 미국 | 100.00 |',
+    '| 두산에너빌리티베트남 | 베트남 | 100.00 |',
+  ].join('\n')
+
+  await page.route('**/api/companies/1', r => r.fulfill({
+    json: { id: 1, corp_code: 'X', corp_name: '테스트', stock_code: null,
+            is_active: true, created_at: '', updated_at: '', report_count: 1,
+            latest_analysis_date: null, tags: [] } }))
+  await page.route('**/api/companies/1/reports', r => r.fulfill({
+    json: [{ id: 1, company_id: 1, rcept_no: '1', report_name: '사업보고서 (2024.12)',
+             report_type: '사업보고서', fiscal_year: 2024, filing_date: '2025-03-19',
+             file_path: '/x', downloaded_at: '', created_at: '', analysis_count: 1 }] }))
+  await page.route('**/api/reports/1/analyses', r => r.fulfill({
+    json: [{ id: 1, company_id: 1, report_id: 1, analysis_type: 'subsidiary',
+             status: 'completed', result_json: null, result_summary: broken,
+             error_message: null, model_name: 'test', created_at: '',
+             updated_at: '2026-08-10T00:00:00' }] }))
+
+  await page.goto('/companies/1/reports/1', { waitUntil: 'networkidle' })
+
+  const table = page.locator('article table')
+  await expect(table).toBeVisible()
+  await expect(table.locator('tbody tr')).toHaveCount(2)
+  await expect(table.locator('th').first()).toHaveText('회사명')
+  // 파이프 문자가 본문에 그대로 노출되면 안 된다
+  await expect(page.locator('article')).not.toContainText('| 두산밥캣 |')
+})
+
 test('관리 기능은 로그인 전 안내를 노출', async ({ page }) => {
   await page.goto('/tags')
   await expect(page.getByText('관리자 로그인이 필요합니다')).toBeVisible()
