@@ -8,9 +8,12 @@ class Settings(BaseSettings):
     backend_port: int = 8016
     frontend_port: int = 8097
     scheduler_interval_hours: int = 24
-    # Gemini 3 flash preview TPM 한도: 2M tokens/min
-    # 요청당 ~850K 토큰 기준 → 분당 2건 → 30초 간격
-    analysis_interval_secs: int = 30
+    # batch 작업 상태 확인 주기 (실측 turnaround 8.3분)
+    batch_poll_interval_secs: int = 60
+    # 신규 보고서 수집 후 분석까지 자동 요청할지. 기본 off — 의도치 않은 비용 방지
+    scheduler_auto_analyze: bool = False
+    # 보고서에서 분석에 쓰이는 구역만 추려 LLM에 보낼지 (입력 ~85% 절감)
+    section_extract_enabled: bool = True
     # 관리자 키 — 비어 있으면 인증 비활성화(모든 관리 요청 통과)
     admin_key: str = ""
     data_dir: Path = Path("/app/data")

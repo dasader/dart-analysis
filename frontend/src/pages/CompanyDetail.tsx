@@ -15,20 +15,10 @@ import {
 } from "../api/client";
 import ReportTable from "../components/ReportTable";
 import DownloadModal from "../components/DownloadModal";
-import AnalysisView from "../components/AnalysisView";
 import TagChip from "../components/TagChip";
 import AdminButton from "../components/AdminButton";
 import { getErrorMessage } from "../lib/errors";
-import { ANALYSIS_TYPE_KEYS, ANALYSIS_TYPE_LABELS } from "../types";
-import type { Company, Report, Analysis, AnalysisType, Tag } from "../types";
-
-type TabKey = "reports" | AnalysisType;
-
-// 분석 탭은 단일 출처(ANALYSIS_TYPE_KEYS/LABELS)에서 파생
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "reports", label: "보고서" },
-  ...ANALYSIS_TYPE_KEYS.map((k) => ({ key: k, label: ANALYSIS_TYPE_LABELS[k] })),
-];
+import type { Company, Report, Analysis, Tag } from "../types";
 
 // 폴링 시 분석 상태가 실제로 바뀌었을 때만 setState 하기 위한 비교
 function analysesEqual(a: Analysis[], b: Analysis[]): boolean {
@@ -50,7 +40,6 @@ export default function CompanyDetail() {
   const [company, setCompany] = useState<Company | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
-  const [tab, setTab] = useState<TabKey>("reports");
   const [showDownload, setShowDownload] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
@@ -85,15 +74,33 @@ export default function CompanyDetail() {
     }
   };
 
-  // 폴링 전용: 변하지 않는 회사/보고서/태그는 건너뛰고 분석 상태만 갱신
-  const refreshAnalyses = useCallback(async () => {
-    const next = await fetchCompanyAnalyses(companyId);
+  // 폴링 전용: 회사/태그는 건너뛰고 보고서와 분석만 갱신.
+  // 보고서도 함께 받아야 목록의 분석 상태가 같이 최신이 된다.
+  const refreshProgress = useCallback(async () => {
+    const [reps, next] = await Promise.all([
+      fetchReports(companyId),
+      fetchCompanyAnalyses(companyId),
+    ]);
+    setReports(reps);
     setAnalyses((prev) => (analysesEqual(prev, next) ? prev : next));
   }, [companyId]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // 진행 중인 분석이 하나라도 있으면 화면 어디에 있든 갱신한다.
+  // Batch는 분 단위라 10초 간격이면 충분하다.
+  const hasActiveJob = analyses.some(
+    (a) => a.status === "pending" || a.status === "running",
+  );
+  useEffect(() => {
+    if (!hasActiveJob) return;
+    const timer = setInterval(() => {
+      refreshProgress().catch(() => {});
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [hasActiveJob, refreshProgress]);
 
   // 태그 목록은 거의 불변 → 마운트 시 1회만 조회
   useEffect(() => {
@@ -246,35 +253,23 @@ export default function CompanyDetail() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="no-print mb-6 border-b border-border">
-        <div className="flex gap-0">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`border-b-2 px-5 py-3 text-sm font-medium transition-colors ${
-                tab === t.key
-                  ? "border-accent text-accent"
-                  : "border-transparent text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+      {/* 사업보고서 목록 — 분석 3종은 각 보고서 안에 있다 */}
+      <div className="no-print mb-4 flex items-baseline gap-2">
+        <h2 className="text-lg font-semibold text-navy">사업보고서</h2>
+        <span className="text-sm text-text-tertiary">
+          보고서명을 클릭하면 분석 결과를 볼 수 있습니다
+        </span>
       </div>
 
-      {/* Tab Content */}
-      {tab === "reports" && (
-        <ReportTable
+      <ReportTable
+          companyId={companyId}
           reports={reports}
+          analyses={analyses}
           analyzing={analyzing}
           onAnalyze={(reportId) => {
             setAnalyzing(true);
             runWithToast(async () => {
               const result = await analyzeReport(reportId);
-              setTab("subsidiary");
               return result.message;
             }).finally(() => setAnalyzing(false));
           }}
@@ -302,17 +297,6 @@ export default function CompanyDetail() {
             });
           }}
         />
-      )}
-
-      {tab !== "reports" && (
-        <AnalysisView
-          companyName={company.corp_name}
-          reports={reports}
-          analyses={analyses}
-          analysisType={tab}
-          onRefresh={refreshAnalyses}
-        />
-      )}
 
       <DownloadModal
         open={showDownload}

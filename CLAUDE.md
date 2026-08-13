@@ -63,7 +63,9 @@ DATA_DIR=./data              # 로컬 개발용 (Docker: /app/data)
 BACKEND_PORT=8016
 FRONTEND_PORT=8116
 SCHEDULER_INTERVAL_HOURS=24  # 신규 보고서 자동 수집 주기
-ANALYSIS_INTERVAL_SECS=30    # 보고서 간 Gemini 호출 최소 간격 (TPM 한도 대응)
+BATCH_POLL_INTERVAL_SECS=60  # batch 작업 상태 확인 주기
+SCHEDULER_AUTO_ANALYZE=false # 수집한 신규 보고서를 자동 분석할지 (화면에서 변경 가능)
+SECTION_EXTRACT_ENABLED=true # 분석에 필요한 구역만 추려 LLM에 전달 (화면에서 변경 가능)
 ADMIN_KEY=                   # 관리 기능 보호용 키 (비우면 인증 비활성화)
 ```
 
@@ -72,14 +74,14 @@ ADMIN_KEY=                   # 관리 기능 보호용 키 (비우면 인증 비
 ### 백엔드 (`backend/app/`)
 
 ```
-main.py          FastAPI 앱, lifespan(DB 초기화·프롬프트 시딩·스케줄러·큐 워커 시작)
+main.py          FastAPI 앱, lifespan(DB 초기화·프롬프트 시딩·고아 pending 재투입·스케줄러·큐 워커)
 config.py        pydantic-settings, .env 탐색 순서: [".env", "../.env"], extra="ignore" (admin_key 포함)
 dependencies.py  require_admin — X-Admin-Key 헤더 검증 (admin_key 미설정 시 통과)
 database.py      SQLAlchemy engine + SessionLocal + Base
-models.py        Company · Report · Analysis · PromptTemplate
+models.py        Company · Report · Analysis · PromptTemplate · BatchJob · AppSetting
 schemas.py       Pydantic 요청/응답 모델
 seed_prompts.py  3가지 기본 프롬프트 템플릿 DB 시딩
-scheduler.py     APScheduler — 활성 기업의 신규 사업보고서 자동 수집
+scheduler.py     APScheduler — 신규 사업보고서 자동 수집 + batch 상태 폴링(60초)
 
 routers/
   companies.py   CRUD + OpenDART 기업 검색 (삭제는 관리자 전용)
@@ -87,26 +89,40 @@ routers/
   analyses.py    분석 요청·조회·큐 상태 (분석 요청은 관리자 전용)
   scheduler.py   스케줄러 상태 조회·즉시 실행 (즉시 실행은 관리자 전용)
   prompts.py     프롬프트 템플릿 CRUD (수정은 관리자 전용)
+  batches.py     batch 작업 목록·취소·구역추출 실패 목록 (취소는 관리자 전용)
+  app_settings.py 동작 설정 조회·변경 (변경은 관리자 전용)
   tags.py        태그 CRUD (삭제는 관리자 전용)
   admin.py       GET /api/admin/verify — 관리자 키 검증
 
 services/
   dart_client.py      OpenDART API 연동 (corpCode.xml ZIP 파싱, list.json, document.xml)
   report_service.py   ZIP 다운로드·추출, XML/HTML 텍스트 추출
-  gemini_client.py    Gemini API (run_in_executor로 블로킹 호출 분리, 429 자동 재시도)
-  analysis_service.py run_combined_analysis() — 보고서 1건에 대해 Gemini 1회 호출로 3가지 분석 동시 처리
-  analysis_queue.py   asyncio.Queue, report_id 기반, 중복 투입 방지, TPM 간격 제어
+  gemini_batch.py     Gemini Batch API — JSONL 빌드·업로드·제출·상태조회·결과 파싱
+  section_extract.py  보고서에서 분석에 쓰이는 구역(I·II·XII)만 추출. 실패 시 예외
+  app_settings.py     런타임 설정 — DB 저장, 없으면 .env 기본값 폴백
+  batch_poller.py     진행 중 BatchJob 상태 확인 → 완료 시 결과를 Analysis에 분배
+  analysis_service.py 프롬프트 조립(build_prompts)·결과 저장(save_result)·JSON 추출
+  analysis_queue.py   asyncio.Queue — 요청을 5초 창으로 모아 batch 1건으로 제출
 ```
 
-### 분석 흐름
+### 분석 흐름 (Gemini Batch API)
+
+모든 분석은 Batch API로 처리된다. 실시간 경로는 없다.
 
 1. 엔드포인트가 `Analysis` 레코드(status=pending) 생성 후 `enqueue(report_id)` 호출
-2. 큐 워커가 `run_combined_analysis(db, report_id)` 실행
-3. pending 상태인 분석 유형을 한꺼번에 수집, **Gemini 1회 호출**로 JSON 응답 수신
-4. JSON 파싱 후 각 `Analysis` 레코드에 저장 (status→completed/failed)
-5. 프론트엔드는 5초 폴링으로 상태 감지
+2. 큐 워커가 첫 요청 후 **5초 창** 동안 더 모아 한 batch로 묶는다
+3. 보고서별로 JSONL 1줄 생성(3종 분석을 1요청으로 통합) → 업로드 → `batches.create`
+4. `BatchJob` 저장, 담당 `Analysis`들 running 전환
+5. 스케줄러가 60초마다 `poll_batches()` — 완료 시 결과 JSONL을 `key`(=report_id)로 분배
+6. 프론트엔드는 5초 폴링으로 상태 감지, `/settings/batches`에서 작업 현황 확인
 
-**중요**: `gemini_client.generate()`는 동기 함수(`generate_content`)를 `loop.run_in_executor()`로 래핑 — 직접 호출하면 이벤트 루프가 블로킹되어 다른 API 요청 불가.
+**중요**:
+- 큐는 실행 대기열이 아니라 **묶는 버퍼**다. 진행 상태의 원본은 DB(`BatchJob`)이므로
+  재시작해도 폴링이 이어받는다. 제출 전에 죽어 pending으로 남은 건은 시작 시 재투입된다
+- JSONL은 REST 원형 스키마 — `systemInstruction`은 top-level, `maxOutputTokens`·
+  `thinkingConfig`는 `generationConfig` 안 (inline 방식의 평면 config와 형태가 다르다)
+- 보고서 1건이 UTF-8로 ~1.7MB라 inline 방식(총 20MB 제한)은 쓸 수 없다
+- 잡이 `SUCCEEDED`여도 개별 요청은 실패할 수 있다 — 결과 줄마다 `error` 키를 확인한다
 
 ### 관리자 게이팅
 
@@ -129,6 +145,25 @@ services/
 - **수집**: 사업보고서만
 - **제외**: 반기보고서, 분기보고서, 정정보고서 (`"정정"` 포함 시 제외)
 
+### 화면 계층
+
+보고서가 부모, 분석 3종이 자식이다. 분석은 특정 보고서(=특정 연도)에 딸린 결과이므로
+같은 층에 나란히 두지 않는다.
+
+```
+/                                  기업 목록
+/companies/:id                     기업 상세 — 사업보고서 목록만
+/companies/:id/reports/:reportId   보고서 상세 — 분석 3종 탭
+```
+
+연도 선택은 보고서 목록에서 한 번만 한다. 예전에는 분석 유형 탭마다 연도 선택기가
+따로 있어 탭을 옮길 때마다 연도를 다시 골라야 했다.
+
+**진행 상태 폴링**: pending·running이 하나라도 있으면 10초 간격으로 갱신한다.
+기업 상세는 보고서와 분석을 **함께** 받아야 목록의 분석 상태가 같이 최신이 된다
+(보고서만 따로 받으면 `analysis_count`가 옛날 값으로 남는다).
+Batch는 분 단위라 5초 폴링은 과하다.
+
 ### 프론트엔드 (`frontend/src/`)
 
 ```
@@ -138,13 +173,16 @@ context/AdminContext.tsx  AdminProvider + useAdmin() — isAdmin·login·logout
 types/           TypeScript 인터페이스
 pages/
   CompanyList.tsx    기업 목록 CRUD, 컬럼별 정렬 (기업명·코드·보고서수·분석일)
-  CompanyDetail.tsx  탭(보고서·분석 3종), 토스트 알림, 분석 상태 관리
-  PromptSettings.tsx 프롬프트 템플릿 편집
+  CompanyDetail.tsx  기업 상세 — 사업보고서 목록. 진행 중이면 10초 폴링(보고서+분석 동시)
+  ReportDetail.tsx   /companies/:id/reports/:reportId — 분석 3종 탭·재분석·PDF 출력
+  PromptSettings.tsx 동작 설정 토글 + 프롬프트 템플릿 편집
+  BatchList.tsx      /settings/batches — batch 작업 현황·취소 (15초 폴링)
+  SettingToggles.tsx 동작 설정 토글 — 끄면 비용이 느는 항목은 확인 후 변경
 components/
-  ReportTable.tsx      정렬·분석·재다운로드·삭제, 보고서명 클릭 시 ZIP 다운로드
-  AnalysisView.tsx     분석 결과 표시, 5초 폴링, ReactMarkdown + remark-gfm, 인쇄 전용 통합 뷰
+  ReportTable.tsx      정렬·분석·재다운로드·삭제. 보고서명 클릭 시 보고서 상세로 이동.
+                       분석 열은 analysis_count가 아니라 실제 분석 상태에서 파생
+  AnalysisView.tsx     보고서 1건 × 분석 1종의 결과 렌더 (ReactMarkdown + remark-gfm)
   AdminButton.tsx      관리 버튼 래퍼 — 미로그인 시 disabled + "관리자 로그인이 필요합니다" 툴팁
-  PrintableReport.tsx  (미사용 — AnalysisView 내 인라인으로 대체됨)
   CompanySearch.tsx    OpenDART 기업 검색 자동완성
   CompanyEditModal.tsx 기업 정보 수정 모달
   DownloadModal.tsx    보고서 다운로드 연도 선택 (사업보고서 고정)
@@ -152,7 +190,8 @@ components/
 
 **CSS**: Tailwind v4 (`@import "tailwindcss"` + `@plugin "@tailwindcss/typography"`), `@theme` 블록에 커스텀 색상 변수 정의. 폰트: Pretendard(한글) + DM Sans(영문) + JetBrains Mono — mono 폰트 스택에 Pretendard 포함하여 한글 fallback 처리.
 
-**인쇄**: `window.print()` 호출 시 화면 UI는 `no-print`로 숨기고, `print-only` 클래스의 통합 보고서(선택 연도 3개 분석)만 출력. 표 깨짐 방지를 위해 `index.css`에 전용 `@media print` 스타일 정의.
+**인쇄**: 보고서 상세에서 `window.print()` 호출 시 화면 UI는 `no-print`로 숨기고,
+`print-only` 클래스의 통합 보고서(그 보고서의 분석 3종)만 출력. 표 깨짐 방지를 위해 `index.css`에 전용 `@media print` 스타일 정의.
 
 ### OpenDART API
 
@@ -161,13 +200,102 @@ components/
 - `document.xml` → 보고서 ZIP 다운로드, `{DATA_DIR}/reports/{corp_code}/{fiscal_year}/{rcept_no}.zip` 저장
 - 보고서 ZIP 다운로드 엔드포인트: `GET /api/reports/{id}/download` → `Content-Disposition` 헤더로 `회사명_연도_사업보고서.zip` 파일명 설정
 
+### 런타임 설정 (AppSetting)
+
+`.env`는 앱 시작 시 한 번만 읽히므로, 운영 중 바꿔야 하는 값은 `app_settings` 테이블에 둔다.
+DB에 값이 없으면 `.env` 기본값으로 폴백하므로 기존 동작이 유지된다.
+
+- 화면: `/settings/prompts` 상단 "동작 설정" (관리자만 변경 가능, 재시작 불필요)
+- 대상: `scheduler_auto_analyze`, `section_extract_enabled`
+- 새 토글을 추가하려면 `services/app_settings.py`의 `TOGGLES`에 항목 하나만 넣으면
+  API·화면이 자동으로 따라온다
+- `batch_poll_interval_secs`는 APScheduler 등록 시점에 쓰이므로 `.env` 전용이다
+
+### 프롬프트 갱신 절차
+
+`seed_default_prompts()`는 **DB에 없는 항목만 넣는다.** 화면에서 편집한 프롬프트를
+재시작 때마다 날리면 안 되기 때문이다. 따라서 `seed_prompts.py`를 고쳐도 **이미 돌고
+있는 인스턴스에는 반영되지 않는다.** 실제 분석은 DB의 `prompt_templates`를 쓴다.
+
+프롬프트를 바꿨으면 둘 다 해야 한다.
+1. `seed_prompts.py` 수정 (신규 배포용)
+2. `/settings/prompts` 화면에서 붙여넣기 (운영 중인 인스턴스용)
+
+바꾼 뒤에는 반드시 **실제 batch를 한 번 돌려** 확인한다. 직접 API 호출로 검증하면
+`seed_prompts.py`를 읽지만 서비스는 DB를 읽으므로, 둘이 어긋난 채 통과할 수 있다.
+
+### 분석 프롬프트 원칙
+
+**보고서에 없는 것은 쓰지 않는다.** 프롬프트 첫머리에 "기재 없으면 '보고서에 기재 없음'
+이라 쓰고 추측하지 마라"를 둔다. 원문 정보량이 기업마다 크게 다르므로(NAVER는 연구개발
+서술이 몇 줄뿐이다) 고정 섹션을 요구하면 모델이 일반론으로 채운다.
+
+**모델은 프롬프트의 예시를 그대로 흉내낸다.** 예시 표에 GFM 구분선(`|---|`)이
+없었더니 출력에서도 빠졌고(실측 표 31개 중 5개), `remark-gfm`이 표로 인식하지 못해
+파이프 문자가 그대로 노출됐다. 한 응답 안에서 뭉쳐서 실패하는 경향이 있다.
+예시를 올바르게 쓰고, 렌더 직전에 `lib/markdown.ts`의 `normalizeTables()`로 한 번 더
+보정한다(모델 출력에 100%를 기대할 수는 없다).
+
+**개수를 세는 항목은 검증 기준을 원문에서 찾아 주면 편차가 사라진다.**
+종속회사 목록은 큰 기업에서 회차마다 12~166행으로 튀었는데, "행 수는 요약표의
+'기말' 연결대상회사수와 일치해야 한다"는 자기 검증 지시를 넣자 3사 × 3회가
+모두 정답과 일치했다(NAVER 82, 현대자동차 166, 두산에너빌리티 62).
+
+분석 유형별로 처방이 다르다.
+
+- **종속회사·R&D**: 원문에 표준 공시 표가 있다. **그대로 옮기게 하면 분량이 는다.**
+  R&D는 연구개발비용 3개년 표(비용 성격별 분류·회계처리·정부보조금·매출액 대비 비율),
+  지식재산권 현황, 연구개발 조직·실적이 근거다. 연구분야별 투자금액은 원문에 없으므로
+  요구하지 마라(전부 "-"로 돌아온다)
+- **국가전략기술**: 7개 기업 실측 결과 `국가전략기술`·`조세특례`·`세액공제`가 원문에
+  **0회**다. 공시 항목이 아니라 사업 내용에서 추론하는 과제다. 따라서 **길이를 늘리면
+  환각이 는다.** 대신 12개 분야를 모두 검토해 해당 없음을 명시하게 하고, 해당 분야는
+  원문을 인용하게 하며, 시사점마다 [보고서 근거]/[분석가 추정]을 달게 한다
+
+7개 기업 실측(개선 전 → 후): R&D 표 6행 → 21~36행, 국가전략기술은 분량은 그대로
+두고 검토 분야가 3~7행 → 13~14행. "기재 없음" 표기가 0회 → 최대 25회로 늘었는데,
+이는 품질 저하가 아니라 근거 없는 서술이 걸러진 것이다.
+
+### 구역 추출
+
+보고서 전문을 그대로 보내면 입력의 대부분이 재무제표·임원 명단이라 3종 분석에 쓸모가 없다.
+`section_extract.py`가 대제목 기준으로 **I(회사의 개요) · II(사업의 내용) · XII(상세표)**만 남긴다.
+
+- 7개 기업 실측: 원문 대비 **8~21%**로 축소. 품질은 유지되거나 소폭 향상
+  (SK하이닉스 기준 입력 418,637 → 52,192토큰, 골든 21개 중 적중 14~15 → 15~17)
+- 대제목은 같은 문구가 목차·본문·재무제표 안에 여러 번 나온다. **정규 순서(I→XII)로
+  이어지는 체인 중 가장 넓게 퍼진 것**을 본문으로 고른다 — 목차는 12개가 수천 자 안에
+  몰려 있어 자연히 탈락하고, 목차가 없는 보고서도 같은 규칙으로 처리된다
+- 마지막 구역(XII) 뒤에는 감사보고서가 이어지므로 `【 전문가의 확인 】`으로 자른다
+
+**추출 실패는 LLM으로 넘기지 않는다.** 필수 구역을 못 찾거나, 거의 줄지 않았거나(>70%),
+지나치게 짧으면(<20,000자) `ExtractionFailed`를 던지고 해당 분석을 failed로 둔다.
+조용히 전문을 흘려보내면 서식이 바뀐 걸 아무도 모른 채 비용만 나가기 때문이다.
+실패는 `[구역추출실패]` 접두어가 붙어 `/settings/batches` 경고 배너와 헤더 배지로 드러난다
+— 이 알림이 뜨면 `section_extract.py`의 규칙을 고쳐야 한다는 뜻이다.
+
 ### Gemini 모델 및 한도
 
-- 모델: `gemini-3.1-flash-lite`
-- TPM 한도: 2M tokens/min → `analysis_interval_secs=30` (보고서 간 최소 간격)
-- 입력 상한: 1,400,000자 (앞 80% + 뒤 20% 방식 트런케이션)
+- 모델: `gemini-3.5-flash-lite`, thinking level `MINIMAL`
+- **thinking을 올리지 마라.** 사업보고서 분석은 추론이 아니라 추출·나열 과제다.
+  실측상 minimal과 high의 품질이 같은데 high는 thinking 토큰을 추가 과금하고 2배 느리다.
+  이전 모델(`3.1-flash-lite`)은 high에서 오히려 출력이 짧아졌다
+- 입력 상한: 1,400,000자 (앞 80% + 뒤 20% 방식 트런케이션).
+  실측 **1.49자/토큰**이라 약 94만 토큰 — 컨텍스트 상한 1,048,576에 근접하니 늘리지 마라
 - 출력 토큰: 분석 유형당 8,192 × 유형 수 (combined 시 최대 24,576)
-- 429 RESOURCE_EXHAUSTED 시 retryDelay 파싱 후 최대 5회 자동 재시도
+- Batch API는 표준 대비 **50% 할인**. 실측 turnaround 8.3분 (문서상 SLO는 24시간)
+- 보고서 1건당 실측 비용: **$0.0135** (구역추출 + batch). 전환 전 구성 대비 88% 절감
+- batch 작업은 pending/running 48시간 초과 시 `JOB_STATE_EXPIRED`로 만료된다 (자동 재시도 없음)
+
+**모델 선정 근거** (실제 SK하이닉스 2024년 사업보고서로 30회 실측):
+
+| 모델 | 종속회사 표 행 수 (실제 56개사) | 1건 USD |
+|---|---|---|
+| 3.1-flash-lite | 7~10행 (56개 중 8개만 나열) | $0.112 |
+| **3.5-flash-lite** | **55~58행** | $0.137 (batch $0.068) |
+| 3.6-flash | 51~58행 | $0.665 |
+
+`3.1-flash-lite`는 2027-05-07 종료 예정이기도 하다.
 
 ### 포트
 

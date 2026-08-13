@@ -21,3 +21,7 @@ ANALYSIS_TYPES: tuple[AnalysisType, ...] = tuple(AnalysisType)
 
 # 수집 대상 보고서 유형 (사업보고서만 수집)
 REPORT_TYPE_ANNUAL = "사업보고서"
+
+# 구역 추출 실패 표식 — 이 접두어가 붙은 실패는 보고서 서식 변경 신호이므로
+# 화면에서 따로 모아 보여준다 (LLM에는 보내지 않은 상태다)
+EXTRACTION_FAILED_PREFIX = "[구역추출실패] "

@@ -6,6 +6,10 @@ import type {
   Report,
   Analysis,
   SchedulerStatus,
+  BatchJob,
+  QueueStatus,
+  ExtractionFailure,
+  AppSetting,
   PromptTemplate,
   PromptUpdate,
   Tag,
@@ -100,6 +104,10 @@ export function fetchCompanyAnalyses(companyId: number): Promise<Analysis[]> {
   return request(`/companies/${companyId}/analyses`);
 }
 
+export function fetchReportAnalyses(reportId: number): Promise<Analysis[]> {
+  return request(`/reports/${reportId}/analyses`);
+}
+
 export function analyzeReport(
   reportId: number,
 ): Promise<{ message: string; queued: number }> {
@@ -112,10 +120,41 @@ export function analyzeAll(
   return request(`/companies/${companyId}/analyze-all`, { method: "POST" });
 }
 
+// --- Batches ---
+
+export function fetchBatches(): Promise<BatchJob[]> {
+  return request("/batches");
+}
+
+export function cancelBatch(batchId: number): Promise<{ message: string }> {
+  return request(`/batches/${batchId}/cancel`, { method: "POST" });
+}
+
+export function fetchExtractionFailures(): Promise<ExtractionFailure[]> {
+  return request("/batches/extraction-failures");
+}
+
+export function fetchQueueStatus(): Promise<QueueStatus> {
+  return request("/queue/status");
+}
+
 // --- Scheduler ---
 
 export function fetchSchedulerStatus(): Promise<SchedulerStatus> {
   return request("/scheduler/status");
+}
+
+// --- App Settings ---
+
+export function fetchAppSettings(): Promise<AppSetting[]> {
+  return request("/settings");
+}
+
+export function updateAppSetting(key: string, value: boolean): Promise<AppSetting> {
+  return request(`/settings/${key}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
 }
 
 // --- Prompts ---

@@ -75,6 +75,29 @@ class Analysis(Base):
     report = relationship("Report", back_populates="analyses")
 
 
+class BatchJob(Base):
+    """Gemini Batch API 작업 1건. 담당 보고서들을 report_ids로 들고 있는다.
+
+    Analysis 테이블은 건드리지 않는다 — JSONL의 key가 report_id라 결과 분배에 충분하다.
+    """
+
+    __tablename__ = "batch_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_name = Column(String, unique=True, nullable=False)   # batches/xxx
+    file_name = Column(String, nullable=True)                # 업로드한 JSONL (files/xxx)
+    model_name = Column(String, nullable=False)
+    thinking_level = Column(String, nullable=False)
+    state = Column(String, nullable=False)                   # JOB_STATE_*
+    report_ids = Column(Text, nullable=False)                # JSON 배열
+    request_count = Column(Integer, default=0)
+    success_count = Column(Integer, default=0)
+    failed_count = Column(Integer, default=0)
+    error_message = Column(Text, nullable=True)
+    submitted_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+
 class PromptTemplate(Base):
     __tablename__ = "prompt_templates"
 
@@ -83,6 +106,19 @@ class PromptTemplate(Base):
     label = Column(String, nullable=False)
     system_prompt = Column(Text, nullable=False)
     user_prompt_template = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AppSetting(Base):
+    """런타임에 바꿀 수 있는 설정. 값이 없으면 .env 기본값을 쓴다.
+
+    .env는 앱 시작 시 한 번만 읽히므로, 재시작 없이 바꿔야 하는 값만 여기 둔다.
+    """
+
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

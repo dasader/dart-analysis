@@ -82,6 +82,47 @@ export interface SchedulerStatus {
   interval_hours: number;
 }
 
+export interface BatchJob {
+  id: number;
+  job_name: string;
+  model_name: string;
+  thinking_level: string;
+  state: string;
+  report_ids: number[];
+  request_count: number;
+  success_count: number;
+  failed_count: number;
+  error_message: string | null;
+  submitted_at: string | null;
+  completed_at: string | null;
+  is_terminal: boolean;
+}
+
+/** 구역 추출 실패 — 보고서 서식 변경 신호. LLM에는 보내지 않은 상태다. */
+export interface ExtractionFailure {
+  report_id: number;
+  company_id: number;
+  corp_name: string;
+  report_name: string;
+  fiscal_year: number;
+  reason: string;
+  failed_at: string | null;
+}
+
+export interface QueueStatus {
+  pending_count: number;
+  running_batches: number;
+  running_reports: number;
+}
+
+/** 런타임에 바꿀 수 있는 설정 (DB 저장, 재시작 불필요) */
+export interface AppSetting {
+  key: string;
+  label: string;
+  description: string;
+  value: boolean;
+}
+
 export interface PromptTemplate {
   id: number;
   analysis_type: string;
