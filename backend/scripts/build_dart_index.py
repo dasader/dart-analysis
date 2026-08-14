@@ -59,7 +59,7 @@ def load_corp_list(db) -> int:
 
 
 async def fill_jurir(db, limit: int | None, listed_only: bool = True,
-                     delay: float = 0.15) -> tuple[int, int]:
+                     delay: float = 0.2) -> tuple[int, int]:
     """법인번호가 아직 없는 기업을 company.json으로 채운다. (채움, 없음)"""
     q = db.query(DartCorp).filter(DartCorp.jurir_checked_at.is_(None))
     if listed_only:
@@ -72,8 +72,9 @@ async def fill_jurir(db, limit: int | None, listed_only: bool = True,
     filled = empty = errors = 0
     consecutive_errors = 0
 
-    # DART는 몰아치면 응답 없이 연결을 끊는다(RemoteProtocolError). 실측상 동시 5개로
-    # 약 1,000회를 넘기면 시작되므로, 순차 호출 + 짧은 간격으로 낮춘다.
+    # DART 공식 제한은 **분당 1,000회**이고, 넘기면 API가 아니라 네트워크 레이어에서
+    # IP를 차단한다 — 에러 JSON이 아니라 TCP가 끊기고 사이트 전체가 막힌다(공식 1시간).
+    # 그래서 직렬 + 간격으로 간다. delay 0.2 = 300req/min (한도의 30%).
     async with httpx.AsyncClient(timeout=30) as client:
         for i, corp in enumerate(targets, 1):
             for attempt in range(3):
@@ -100,8 +101,13 @@ async def fill_jurir(db, limit: int | None, listed_only: bool = True,
                 continue
 
             consecutive_errors = 0
+            status = data.get("status")
+            if status == "020":
+                # 일일 20,000건 초과. HTTP 200으로 오므로 상태코드만 보면 놓친다.
+                print(f"\n  일일 한도 초과(020) — 내일 이어서 실행하세요.")
+                break
             corp.jurir_checked_at = datetime.utcnow()
-            if data.get("status") != "000":
+            if status != "000":
                 empty += 1
             else:
                 digits = re.sub(r"\D", "", data.get("jurir_no") or "")
@@ -125,7 +131,8 @@ async def main() -> None:
     ap.add_argument("--list-only", action="store_true", help="corpCode.xml 적재만")
     ap.add_argument("--limit", type=int, help="법인번호 조회 건수 상한")
     ap.add_argument("--all", action="store_true", help="비상장 포함 전체 (호출 많음)")
-    ap.add_argument("--delay", type=float, default=0.15, help="호출 간격(초). 끊기면 늘린다")
+    ap.add_argument("--delay", type=float, default=0.2,
+                    help="호출 간격(초). 0.2 = 300req/min으로 공식 한도(분당 1,000)의 30%")
     args = ap.parse_args()
 
     run_migrations(engine)
