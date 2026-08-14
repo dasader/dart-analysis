@@ -55,27 +55,33 @@ async def run(args) -> None:
                 print(f"  {k:<24} 실패 — {e}")
                 continue
             results.append(res)
-            print(f"  {k:<24} 총 {res['total']:>7,}건 / 수집 {len(res['items']):>4}건")
+            broad = " ← 넓음(기술 특이성 희석)" if res["total"] > patent_search.BROAD_THRESHOLD else ""
+            print(f"  {k:<24} 총 {res['total']:>7,}건 / 수집 {len(res['items']):>4}건{broad}")
 
         if not results:
             print("\n검색 결과가 없어 중단합니다.")
             return
 
-        applicants = patent_search.aggregate_applicants(results)
-        m = patent_search.match_companies(db, applicants, limit=args.top)
+        applicants, kw_hits = patent_search.aggregate_applicants(results)
+        m = patent_search.match_companies(db, applicants, limit=args.top, keywords=kw_hits)
+        n_broad = sum(1 for r in results if r["total"] > patent_search.BROAD_THRESHOLD)
+        if n_broad:
+            print(f"\n  ※ 넓은 키워드 {n_broad}개 포함. 아래 '키워드' 열이 1이면 "
+                  f"그 키워드에서만 나온 것이라 기술 연관성이 약할 수 있습니다.")
         print(f"\n■ 출원인 {len(applicants)}명 → "
               f"추적중 {len(m['tracked'])} / 등록가능 {len(m['available'])} / 제외 {len(m['excluded'])}")
 
         if m["tracked"]:
             print("\n  [추적 중] 바로 분석 가능")
             for x in m["tracked"]:
-                print(f"    {x['corp_name'][:18]:<20} {x['patents']:>3}건  {x['corp_code']}")
+                print(f"    {x['corp_name'][:18]:<20} {x['patents']:>3}건  "
+                      f"키워드 {len(x['keywords'])}개  {x['corp_code']}")
 
         if m["available"]:
             print("\n  [등록 가능] DART에 있으나 아직 추적하지 않음")
             for x in m["available"]:
-                print(f"    {x['corp_name'][:18]:<20} {x['patents']:>3}건  {x['corp_code']}"
-                      f"  {x['applicant'][:20]}")
+                print(f"    {x['corp_name'][:18]:<20} {x['patents']:>3}건  "
+                      f"키워드 {len(x['keywords'])}개  {x['applicant'][:20]}")
 
         if m["excluded"]:
             print(f"\n  [제외] {len(m['excluded'])}명")

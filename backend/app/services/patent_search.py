@@ -27,6 +27,13 @@ PROVIDER = "kipris"
 # 실측: 7자 2,440건 → 27자 318건(정밀) → 86자 8건(과협소) → 251자 20,029건(노이즈)
 GOOD_QUERY_LEN = (4, 30)
 
+# 총건수가 이보다 크면 "넓은 키워드"로 본다. 결과가 쓰레기가 되는 건 아니지만
+# (관련도순이라 상위 100건은 여전히 관련 있다) 기술 특이성이 희석된다 —
+# "그 기술을 하는 곳" 대신 "그 산업의 큰 회사"가 올라온다.
+# 실측: 좁은 것만 쓴 상위 10과 전부 쓴 상위 10이 9개 겹쳤다. 버릴 만큼 해롭지는 않으므로
+# 버리지 않고 **몇 개 키워드에서 나왔는지**를 함께 보여 구분하게 한다.
+BROAD_THRESHOLD = 20_000
+
 
 class PatentSearchError(RuntimeError):
     pass
@@ -96,13 +103,17 @@ async def search(db: Session, word: str, pages: int = 1, rows: int = 100) -> dic
     return {"word": word, "total": total, "items": collected, "pages_fetched": fetched}
 
 
-def aggregate_applicants(results: list[dict]) -> Counter:
-    """여러 검색 결과에서 출원인별 등장 건수를 합산한다.
+def aggregate_applicants(results: list[dict]) -> tuple[Counter, dict[str, set[str]]]:
+    """여러 검색 결과에서 출원인별 (특허 건수, 등장한 키워드 집합)을 낸다.
 
     같은 특허가 여러 키워드에 걸리면 중복 집계되므로 출원번호로 한 번 접는다.
+
+    키워드 집합을 함께 주는 이유: 넓은 키워드 하나에서만 많이 나온 대기업과
+    여러 키워드에 걸쳐 꾸준히 나온 기업은 성격이 다르다. 점수만으로는 안 갈린다.
     """
     seen: set[str] = set()
     counter: Counter = Counter()
+    keywords: dict[str, set[str]] = {}
     for res in results:
         for item in res["items"]:
             if item["app_no"] and item["app_no"] in seen:
@@ -111,10 +122,12 @@ def aggregate_applicants(results: list[dict]) -> Counter:
                 seen.add(item["app_no"])
             for name in item["applicants"]:
                 counter[name] += 1
-    return counter
+                keywords.setdefault(name, set()).add(res["word"])
+    return counter, keywords
 
 
-def match_companies(db: Session, applicants: Counter, limit: int = 30) -> dict:
+def match_companies(db: Session, applicants: Counter, limit: int = 30,
+                    keywords: dict[str, set[str]] | None = None) -> dict:
     """출원인명 → 법인번호 → DART 기업.
 
     이름으로 매칭하지 않는다 — 특허는 한글 표기("주식회사 엘지화학"), DART는 영문
@@ -145,7 +158,8 @@ def match_companies(db: Session, applicants: Counter, limit: int = 30) -> dict:
     for name in names:
         cnt = applicants[name]
         jurir = by_name.get(name)
-        base = {"applicant": name, "patents": cnt, "jurir_no": jurir}
+        base = {"applicant": name, "patents": cnt, "jurir_no": jurir,
+                "keywords": sorted(keywords.get(name, [])) if keywords else []}
 
         if jurir and jurir in tracked_by_jurir:
             c = tracked_by_jurir[jurir]
