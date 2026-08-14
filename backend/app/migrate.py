@@ -20,6 +20,12 @@ ADDITIONS: list[tuple[str, str, str]] = [
 
 
 def run(engine: Engine) -> None:
+    """신규 테이블 생성 + 누락 컬럼 추가. 앱과 스크립트 양쪽에서 부른다."""
+    from app.database import Base
+    import app.models  # noqa: F401  — 모델을 메타데이터에 등록시킨다
+
+    Base.metadata.create_all(bind=engine)
+
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
 

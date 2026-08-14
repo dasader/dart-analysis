@@ -81,8 +81,11 @@ def test_migration_adds_missing_column(tmp_path):
     assert "jurir_no" in {c["name"] for c in inspect(engine).get_columns("companies")}
 
 
-def test_migration_skips_absent_table(tmp_path):
-    """아직 없는 테이블은 create_all이 만들 몫 — 건드리지 않는다."""
+def test_migration_creates_tables_on_empty_db(tmp_path):
+    """빈 DB에서는 테이블 생성까지 해준다 — 스크립트가 앱을 거치지 않고 도는 탓이다."""
     engine = create_engine(f"sqlite:///{tmp_path / 'empty.db'}")
-    run_migrations(engine)                            # 예외 없이 통과하면 된다
-    assert "companies" not in inspect(engine).get_table_names()
+    run_migrations(engine)
+    tables = set(inspect(engine).get_table_names())
+    assert {"companies", "applicant_corps", "dart_corps", "api_calls"} <= tables
+    # 새로 만든 테이블에는 컬럼이 처음부터 들어 있다
+    assert "jurir_no" in {c["name"] for c in inspect(engine).get_columns("companies")}

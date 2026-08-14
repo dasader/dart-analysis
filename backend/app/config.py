@@ -5,6 +5,8 @@ from pathlib import Path
 class Settings(BaseSettings):
     opendart_api_key: str
     gemini_api_key: str
+    # KIPRIS 특허검색 (data.go.kr 발급 ServiceKey)
+    kipris_api_key: str = ""
     backend_port: int = 8016
     frontend_port: int = 8097
     scheduler_interval_hours: int = 24

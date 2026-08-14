@@ -130,6 +130,45 @@ class ApplicantCorp(Base):
     bizr_no = Column(String, nullable=True, index=True)   # 사업자번호 10자리(숫자만)
 
 
+class DartCorp(Base):
+    """DART 전체 기업 색인 (corpCode.xml + 법인번호).
+
+    `Company`는 **우리가 추적하기로 한** 기업이고, 이쪽은 DART에 존재하는 전체 목록이다.
+    특허 출원인의 법인번호로 corp_code를 역인출하려면 이 색인이 필요하다 —
+    corpCode.xml에는 법인번호가 없어(corp_code·corp_name·stock_code·modify_date뿐)
+    기업마다 company.json을 한 번씩 불러 채워야 한다.
+
+    전체 11만여 개를 다 채우면 호출이 과하므로 **상장사부터** 채운다.
+    """
+
+    __tablename__ = "dart_corps"
+
+    corp_code = Column(String, primary_key=True)
+    corp_name = Column(String, nullable=False, index=True)
+    stock_code = Column(String, nullable=True, index=True)   # 있으면 상장사
+    jurir_no = Column(String, nullable=True, index=True)      # company.json으로 채운다
+    # 조회했으나 법인번호가 없던 경우를 구분해야 재시도를 반복하지 않는다
+    jurir_checked_at = Column(DateTime, nullable=True)
+
+
+class ApiCall(Base):
+    """외부 API 호출 1건. KIPRIS 무료 한도(월 1,000회)를 지키기 위한 계측.
+
+    실패 호출도 기록한다 — 한도 집계가 성공 여부와 무관할 수 있어 보수적으로 센다.
+    """
+
+    __tablename__ = "api_calls"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider = Column(String, nullable=False, index=True)   # kipris, dart, ...
+    operation = Column(String, nullable=False)
+    query = Column(String, nullable=True)
+    ok = Column(Boolean, nullable=False, default=True)
+    note = Column(String, nullable=True)
+    period = Column(String, nullable=False, index=True)     # YYYY-MM (한도 주기)
+    called_at = Column(DateTime, default=datetime.utcnow)
+
+
 class AppSetting(Base):
     """런타임에 바꿀 수 있는 설정. 값이 없으면 .env 기본값을 쓴다.
 

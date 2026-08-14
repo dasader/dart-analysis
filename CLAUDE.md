@@ -78,7 +78,8 @@ main.py          FastAPI 앱, lifespan(DB 초기화·프롬프트 시딩·고아
 config.py        pydantic-settings, .env 탐색 순서: [".env", "../.env"], extra="ignore" (admin_key 포함)
 dependencies.py  require_admin — X-Admin-Key 헤더 검증 (admin_key 미설정 시 통과)
 database.py      SQLAlchemy engine + SessionLocal + Base
-models.py        Company · Report · Analysis · PromptTemplate · BatchJob · AppSetting · ApplicantCorp
+models.py        Company · Report · Analysis · PromptTemplate · BatchJob · AppSetting
+                 · ApplicantCorp · DartCorp · ApiCall
 migrate.py       누락 컬럼 추가 (create_all은 기존 테이블에 컬럼을 못 붙인다)
 schemas.py       Pydantic 요청/응답 모델
 seed_prompts.py  3가지 기본 프롬프트 템플릿 DB 시딩
@@ -222,6 +223,48 @@ select co.* from companies co
 cd backend
 python -m scripts.load_applicant_corps ~/Corporate_20260720.zip   # ZIP 그대로 (5초)
 python -m scripts.backfill_jurir_no                               # 기존 기업 채우기
+```
+
+### 기술 → 기업 파이프라인 (프로토타입)
+
+기술 설명에서 출발해 관련 기업을 찾고 기존 분석 파이프라인에 태우는 경로.
+현재 서비스(기업이 출발점)의 **앞단에 얹는** 구조라 뒷단은 그대로 재사용한다.
+
+```
+기술 설명 → keyword_extract(LLM) → patent_search(KIPRIS) → 출원인 집계
+         → 법인번호 조인 → tech_pipeline.onboard → 기존 분석 큐
+```
+
+```bash
+cd backend
+python -m scripts.tech_to_companies "전고체 배터리용 황화물계 고체전해질"      # 조회만
+python -m scripts.tech_to_companies "..." --onboard --max 3                # 등록·수집·분석
+python -m scripts.tech_to_companies --usage                                # 호출량
+```
+
+매칭 결과를 셋으로 나눈다 — 처방이 다르기 때문이다.
+`tracked`(추적 중) / `available`(DART에 있으나 미등록 → 등록만 하면 됨) /
+`excluded`(법인번호 없음 — 개인·대학·연구소·외국).
+
+**비용이 기업 수만큼 곱해진다.** 보고서 1건당 약 $0.0135이므로 `--max`로 반드시 상한을 둔다.
+
+### 외부 API 호출 계측 (ApiCall)
+
+KIPRIS 무료 한도가 **월 1,000회**뿐이라 세지 않으면 조용히 말라죽는다.
+`api_usage.check()`가 호출 **전에** 잔여를 보고 모자라면 아예 보내지 않는다(`QuotaExceeded`).
+실패도 센다 — 한도 집계가 성공 여부와 무관할 수 있어 보수적으로 잡았다.
+
+### DART 기업 색인 (DartCorp)
+
+`Company`는 **추적하기로 한** 기업, `DartCorp`는 DART에 있는 전체 목록이다.
+특허 출원인의 법인번호로 corp_code를 역인출하려면 이 색인이 필요하다.
+
+**DART는 몰아치면 응답 없이 TCP 연결을 끊는다.** 동시 5개로 약 1,000회를 넘기자
+`RemoteProtocolError`가 시작됐고 이후 다른 엔드포인트까지 전부 차단됐다.
+순차 호출 + 간격을 둬야 하고, 스크립트는 연속 실패 30회에서 스스로 멈춘다.
+
+```bash
+python -m scripts.build_dart_index --delay 0.3    # 이어서 채운다(확인분은 건너뜀)
 ```
 
 ### KIPRIS 특허 검색
