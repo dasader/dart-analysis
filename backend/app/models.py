@@ -23,6 +23,8 @@ class Company(Base):
     corp_code = Column(String, unique=True, nullable=False)
     corp_name = Column(String, nullable=False)
     stock_code = Column(String, nullable=True)
+    # 특허 출원인과 조인하기 위한 법인등록번호(13자리, 숫자만). company.json에서 채운다.
+    jurir_no = Column(String, nullable=True, index=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -107,6 +109,25 @@ class PromptTemplate(Base):
     system_prompt = Column(Text, nullable=False)
     user_prompt_template = Column(Text, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ApplicantCorp(Base):
+    """특허 출원인의 법인·사업자 번호 (KIPRIS 벌크 `CORP_APPLICANT.txt`).
+
+    특허 출원인명은 한글 표기("주식회사 엘지화학"), DART는 영문 표기("(주)LG화학")를
+    쓰므로 이름으로는 매칭되지 않는다. 법인번호로 정확 조인한다.
+    실측: 385,256건 중 법인번호 보유 99.4%.
+
+    분기별 갱신이므로 적재는 전량 교체다 (scripts/load_applicant_corps.py).
+    """
+
+    __tablename__ = "applicant_corps"
+
+    applicant_code = Column(String, primary_key=True)   # 특허고객번호
+    applicant_name = Column(String, nullable=False, index=True)
+    applicant_name_eng = Column(String, nullable=True)
+    jurir_no = Column(String, nullable=True, index=True)  # 법인번호 13자리(숫자만)
+    bizr_no = Column(String, nullable=True, index=True)   # 사업자번호 10자리(숫자만)
 
 
 class AppSetting(Base):

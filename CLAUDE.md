@@ -78,7 +78,8 @@ main.py          FastAPI 앱, lifespan(DB 초기화·프롬프트 시딩·고아
 config.py        pydantic-settings, .env 탐색 순서: [".env", "../.env"], extra="ignore" (admin_key 포함)
 dependencies.py  require_admin — X-Admin-Key 헤더 검증 (admin_key 미설정 시 통과)
 database.py      SQLAlchemy engine + SessionLocal + Base
-models.py        Company · Report · Analysis · PromptTemplate · BatchJob · AppSetting
+models.py        Company · Report · Analysis · PromptTemplate · BatchJob · AppSetting · ApplicantCorp
+migrate.py       누락 컬럼 추가 (create_all은 기존 테이블에 컬럼을 못 붙인다)
 schemas.py       Pydantic 요청/응답 모델
 seed_prompts.py  3가지 기본 프롬프트 템플릿 DB 시딩
 scheduler.py     APScheduler — 신규 사업보고서 자동 수집 + batch 상태 폴링(60초)
@@ -199,6 +200,53 @@ components/
 - `list.json` → 공시 목록 (`pblntf_ty=A` 정기공시만)
 - `document.xml` → 보고서 ZIP 다운로드, `{DATA_DIR}/reports/{corp_code}/{fiscal_year}/{rcept_no}.zip` 저장
 - 보고서 ZIP 다운로드 엔드포인트: `GET /api/reports/{id}/download` → `Content-Disposition` 헤더로 `회사명_연도_사업보고서.zip` 파일명 설정
+
+### 특허 출원인 ↔ DART 기업 조인
+
+특허 출원인명은 **한글 표기**("주식회사 엘지화학"), DART는 **영문 표기**("(주)LG화학")를 쓴다.
+실측에서 "이차전지 양극재" 상위 출원인 3곳(LG화학·LG에너지솔루션·POSCO홀딩스, 표본의 46%)이
+문자열 매칭으로 통째로 누락됐다. **이름으로 매칭하지 마라. 법인등록번호로 조인한다.**
+
+```sql
+select co.* from companies co
+  join applicant_corps ac on ac.jurir_no = co.jurir_no
+```
+
+- `applicant_corps` — KIPRIS "출원인 법인 및 사업자 번호" 벌크(수수료 없음).
+  실측 385,256건 중 법인번호 보유 **99.4%**
+- `Company.jurir_no` — `corpCode.xml`에는 법인번호가 없다(4개 필드뿐). 기업마다
+  `company.json`을 한 번 더 호출해야 한다. 신규 등록은 라우터가 자동으로 채운다
+- 분기별 갱신이라 적재는 **전량 교체**다. 증분 병합은 삭제된 출원인을 남겨 조인을 오염시킨다
+
+```bash
+cd backend
+python -m scripts.load_applicant_corps ~/Corporate_20260720.zip   # ZIP 그대로 (5초)
+python -m scripts.backfill_jurir_no                               # 기존 기업 채우기
+```
+
+### KIPRIS 특허 검색
+
+게이트웨이가 **두 개**이고 인증 파라미터명이 다르다. 섞으면 `INVALID_REQUEST_PARAMETER_ERROR`가
+나는데 키를 빼도 같은 오류라 원인이 안 드러난다.
+
+| 게이트웨이 | 인증 파라미터 | 키 출처 |
+|---|---|---|
+| `/kipo-api/kipi/` | `ServiceKey` | data.go.kr |
+| `/openapi/rest/` | `accessKey` | KIPRIS Plus 가입 |
+
+```
+https://plus.kipris.or.kr/kipo-api/kipi/patUtiModInfoSearchSevice/getWordSearch
+  ?word=<검색어>&patent=true&utility=true&pageNo=1&numOfRows=100&ServiceKey=<KEY>
+```
+
+- 서비스 경로의 `Sevice`는 **오타가 아니라 실제 경로**다
+- `patent`·`utility`는 **필수**. 빠지면 파라미터 오류
+- 상품별로 따로 신청해야 한다. 미신청 시 `code=30`
+- 응답 필드: `applicantName`(공동출원은 `|` 구분), `astrtCont`(초록), `ipcNumber`, `registerStatus`
+
+**검색어는 10~30자가 적정**이다. 실측: 7자 2,440건 → 27자 318건(가장 정밀) → 86자 8건(너무 좁음)
+→ 251자 20,029건(노이즈 폭증). 긴 기술 설명문을 그대로 넣으면 안 되고, LLM으로
+키워드 3~5개를 뽑아 각각 검색한 뒤 출원인을 합산하는 편이 안전하다.
 
 ### 런타임 설정 (AppSetting)
 

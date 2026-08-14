@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,8 +12,10 @@ from app.models import Company, Report, Analysis, Tag
 from app.schemas import (
     CompanyCreate, CompanyUpdate, CompanyResponse, CompanySearchResult,
 )
-from app.services.dart_client import search_companies
+from app.services.dart_client import fetch_jurir_no, search_companies
 from app.dependencies import require_admin
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
@@ -81,11 +84,16 @@ def get_company(company_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=CompanyResponse, status_code=201)
-def create_company(body: CompanyCreate, db: Session = Depends(get_db)):
+async def create_company(body: CompanyCreate, db: Session = Depends(get_db)):
     existing = db.query(Company).filter(Company.corp_code == body.corp_code).first()
     if existing:
         raise HTTPException(409, f"이미 등록된 기업입니다: {existing.corp_name}")
     company = Company(**body.model_dump())
+    # 특허 출원인 조인용. 실패해도 등록 자체는 막지 않는다(백필 스크립트가 있다)
+    try:
+        company.jurir_no = await fetch_jurir_no(body.corp_code)
+    except Exception:
+        logger.warning("법인번호 조회 실패: corp_code=%s", body.corp_code)
     db.add(company)
     db.commit()
     db.refresh(company)
