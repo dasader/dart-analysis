@@ -250,3 +250,54 @@ export async function verifyAdminKey(key: string): Promise<boolean> {
   });
   return resp.ok;
 }
+
+// --- 백업·복원 ---
+// request() 래퍼를 쓰지 않는다. 업로드는 브라우저가 boundary를 담은 Content-Type을
+// 직접 정해야 하고(명시하면 multipart 파싱이 깨진다), 다운로드는 JSON이 아니라
+// 파일을 받아야 한다. 둘 다 관리자 키 헤더는 필요하다.
+
+async function adminFetch(url: string, init?: RequestInit): Promise<Response> {
+  const adminKey = getAdminKey();
+  const resp = await fetch(`${BASE}${url}`, {
+    ...init,
+    headers: {
+      ...(adminKey ? { "X-Admin-Key": adminKey } : {}),
+      ...((init?.headers as Record<string, string> | undefined) ?? {}),
+    },
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(body.detail || `HTTP ${resp.status}`);
+  }
+  return resp;
+}
+
+/** 파일을 받아 브라우저 다운로드로 넘긴다. 헤더가 필요해 단순 링크로는 안 된다. */
+export async function downloadBackup(kind: "corps" | "db"): Promise<void> {
+  const resp = await adminFetch(`/backup/${kind}`);
+  const blob = await resp.blob();
+  const name = resp.headers
+    .get("content-disposition")
+    ?.match(/filename="?([^"]+)"?/)?.[1];
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name || `dart-${kind}.sqlite3.gz`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function uploadBackup(
+  kind: "corps" | "db" | "applicant-corps",
+  file: File,
+): Promise<Record<string, unknown>> {
+  const form = new FormData();
+  form.append("file", file);
+  const resp = await adminFetch(`/backup/${kind}`, { method: "POST", body: form });
+  return resp.json();
+}
+
+export function fetchBackupStatus(): Promise<Record<string, number>> {
+  return request("/backup/status");
+}

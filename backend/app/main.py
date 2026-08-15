@@ -12,7 +12,7 @@ from app.scheduler import start_scheduler, shutdown_scheduler
 from app.seed_prompts import seed_default_prompts
 from app.services.analysis_queue import requeue_orphans, worker as queue_worker
 from app.services.dart_client import aclose_http
-from app.routers import companies, reports, analyses, scheduler, admin, batches
+from app.routers import companies, reports, analyses, scheduler, admin, batches, backup
 from app.routers import app_settings as app_settings_router
 from app.routers import technologies as technologies_router
 from app.routers import prompts as prompts_router
@@ -68,3 +68,4 @@ app.include_router(admin.router)
 app.include_router(batches.router)
 app.include_router(app_settings_router.router)
 app.include_router(technologies_router.router)
+app.include_router(backup.router)

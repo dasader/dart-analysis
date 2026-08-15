@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import create_engine, inspect, text
 
 from app.migrate import run as run_migrations
-from scripts.load_applicant_corps import parse
+from app.services.backup import BackupError, parse_applicant_corps as parse
 
 HEADER = "출원인코드¶출원인명¶출원인영문명¶법인번호¶사업자번호\n"
 SAMPLE = HEADER + (
@@ -62,7 +62,9 @@ def test_parse_reads_zip(tmp_path):
 def test_parse_rejects_changed_header(tmp_path):
     """서식이 바뀌면 조용히 잘못 적재하지 말고 멈춰야 한다."""
     bad = "출원인코드¶출원인명¶법인번호\n119980001253¶계양전기¶110111-0212889\n"
-    with pytest.raises(SystemExit, match="헤더"):
+    # 적재 로직이 서비스로 옮겨가면서 SystemExit → BackupError가 됐다.
+    # CLI는 이 예외를 잡아 SystemExit으로 바꾸고, API는 400으로 바꾼다.
+    with pytest.raises(BackupError, match="헤더"):
         parse(write(tmp_path, "CORP.txt", bad))
 
 
