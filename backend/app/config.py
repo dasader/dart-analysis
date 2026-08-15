@@ -7,8 +7,8 @@ class Settings(BaseSettings):
     gemini_api_key: str
     # KIPRIS 특허검색 (data.go.kr 발급 ServiceKey)
     kipris_api_key: str = ""
-    backend_port: int = 8016
-    frontend_port: int = 8097
+    # 포트는 여기 없다 — docker-compose가 .env에서 직접 읽는다(${BACKEND_PORT:-8016}).
+    # 파이썬 쪽에 두면 실제와 어긋나도 아무도 모른다(frontend_port가 8097로 남아 있었다).
     scheduler_interval_hours: int = 24
     # batch 작업 상태 확인 주기 (실측 turnaround 8.3분)
     batch_poll_interval_secs: int = 60

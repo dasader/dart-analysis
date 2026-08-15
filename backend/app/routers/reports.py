@@ -1,10 +1,6 @@
-import re
-import urllib.parse
 from datetime import datetime
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -138,32 +134,6 @@ async def redownload_report(report_id: int, db: Session = Depends(get_db)):
     resp = ReportResponse.model_validate(report)
     resp.analysis_count = 0
     return resp
-
-
-@router.get("/api/reports/{report_id}/download")
-def download_report_zip(report_id: int, db: Session = Depends(get_db)):
-    """저장된 보고서 ZIP 파일을 다운로드. 파일명: 회사명_연도_보고서유형.zip"""
-    report = get_or_404(db, Report, report_id, "보고서를 찾을 수 없습니다.")
-    if not report.file_path:
-        raise HTTPException(404, "보고서 파일이 아직 다운로드되지 않았습니다.")
-
-    zip_path = Path(report.file_path) / f"{report.rcept_no}.zip"
-    if not zip_path.exists():
-        raise HTTPException(404, "ZIP 파일을 찾을 수 없습니다.")
-
-    corp_name = report.company.corp_name
-    raw_name = f"{corp_name}_{report.fiscal_year}_{report.report_type}.zip"
-    # 파일명에 사용 불가한 문자 제거
-    safe_name = re.sub(r'[\\/:*?"<>|]', "_", raw_name)
-    encoded_name = urllib.parse.quote(safe_name, encoding="utf-8")
-
-    return FileResponse(
-        path=str(zip_path),
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"
-        },
-    )
 
 
 @router.get("/api/reports/{report_id}/content")

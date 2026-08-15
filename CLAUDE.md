@@ -47,10 +47,17 @@ python -m pytest tests/ -v
 - 환경에 `python`이 없으면 venv 경로로 실행 (예: `.venv/bin/python -m pytest tests/`)
 - `tests/conftest.py`가 필수 API 키를 주입하므로 `.env` 없이도 import 가능
 
-**프로덕션 (Docker Compose)**:
+**프로덕션 (Docker Compose)** — `Makefile`이 진입점이다:
 ```bash
-docker-compose up --build
+make rebuild   # git pull + 이미지 재빌드 + 컨테이너 강제 재생성 + ps
+make migrate   # DB 스키마만 코드에 맞춘다 (앱을 띄우지 않는다)
+make up / down / logs / ps
 ```
+- `--force-recreate`를 쓰는 이유: 컨테이너는 생성 시점 env를 물고 있어 `.env`만 고치면
+  조용히 옛 값이 남는다. 이미지가 그대로여도 재생성해야 반영된다
+- `make migrate`는 평소에 부를 일이 없다 — 앱 시작 시 lifespan에서 같은 `migrate.run()`이
+  돈다. 컨테이너를 올리기 전에 스키마를 먼저 맞춰야 하거나 마이그레이션만 따로
+  확인할 때 쓴다. 멱등이라 여러 번 돌려도 안전하다
 
 ## 환경 변수 (`.env`)
 
@@ -204,7 +211,6 @@ components/
   풀어 두면 원본의 13배가 쌓인다 — 실측 11건에서 ZIP 7MB인데 `extracted/`가 88MB로
   디스크의 93%였다(91MB → 6.7MB로 줄었다). 압축 해제는 보고서 1건당 10~80ms라
   저장해 둘 이유가 없다(디렉터리 읽기와 속도 차이 없음, 텍스트도 11건 전부 바이트 단위 일치)
-- 보고서 ZIP 다운로드 엔드포인트: `GET /api/reports/{id}/download` → `Content-Disposition` 헤더로 `회사명_연도_사업보고서.zip` 파일명 설정
 
 ### 특허 출원인 ↔ DART 기업 조인
 

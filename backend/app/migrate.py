@@ -41,3 +41,15 @@ def run(engine: Engine) -> None:
                 continue
             conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"))
             logger.info("마이그레이션: %s.%s 추가", table, column)
+
+
+if __name__ == "__main__":
+    # `make migrate` / `python -m app.migrate` — 앱을 띄우지 않고 스키마만 맞춘다.
+    # 앱 시작 시에도 같은 run()이 돌므로 평소에는 부를 일이 없다. 배포 순서상
+    # 컨테이너를 올리기 전에 스키마를 먼저 맞춰야 할 때를 위한 진입점이다.
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+    from app.database import engine
+
+    run(engine)
+    print(f"스키마 확인 완료 — 컬럼 점검 {len(ADDITIONS)}건")
