@@ -7,11 +7,13 @@ import asyncio
 import json
 import logging
 import tempfile
+import time
 from functools import partial
 from pathlib import Path
 
 from google import genai
 from google.genai import types
+from google.genai.errors import ServerError
 
 from app.config import settings
 
@@ -30,6 +32,10 @@ TERMINAL_STATES = frozenset({
     "JOB_STATE_CANCELLED",
     "JOB_STATE_EXPIRED",
 })
+
+# JSONL 업로드 재시도 — 2·4·8초 대기
+_UPLOAD_ATTEMPTS = 4
+_UPLOAD_BACKOFF_SECS = 2
 
 _client: genai.Client | None = None
 
@@ -108,10 +114,28 @@ def _submit_sync(lines: list[str], display_name: str) -> tuple[str, str]:
         f.write("\n".join(lines) + "\n")
         path = f.name
     try:
-        uploaded = client.files.upload(
-            file=path,
-            config=types.UploadFileConfig(display_name=display_name, mime_type="jsonl"),
-        )
+        # File API 업로드는 SDK의 재시도 경로를 타지 않는다(_upload_fd가 self._retry를
+        # 쓰지 않음). 5xx는 실측으로 나오고 구글도 "30초 뒤 재시도"라 안내하므로
+        # 여기서 직접 재시도한다 — 실패하면 보고서 3건 분석이 통째로 날아간다.
+        for attempt in range(_UPLOAD_ATTEMPTS):
+            try:
+                uploaded = client.files.upload(
+                    file=path,
+                    config=types.UploadFileConfig(
+                        display_name=display_name, mime_type="jsonl"
+                    ),
+                )
+                break
+            except ServerError as e:
+                if attempt == _UPLOAD_ATTEMPTS - 1:
+                    raise
+                delay = _UPLOAD_BACKOFF_SECS * 2**attempt
+                logger.warning(
+                    "JSONL 업로드 실패(%d/%d), %d초 뒤 재시도: %s",
+                    attempt + 1, _UPLOAD_ATTEMPTS, delay, e.code,
+                )
+                time.sleep(delay)
+
         job = client.batches.create(
             model=MODEL_NAME, src=uploaded.name, config={"display_name": display_name}
         )

@@ -1,7 +1,9 @@
 """Batch API의 순수 함수(JSONL 빌드·결과 파싱·JSON 추출) 검증 — API 호출 없음."""
 import json
+from types import SimpleNamespace
 
 import pytest
+from google.genai.errors import ServerError
 
 from app.services.analysis_service import extract_json
 from app.services.gemini_batch import build_jsonl_line, parse_result_line
@@ -97,3 +99,44 @@ def test_extract_json_raises_on_garbage():
     """파싱 불가는 예외로 드러나야 한다 — 호출부가 원문 보존으로 폴백한다."""
     with pytest.raises((json.JSONDecodeError, ValueError)):
         extract_json("이건 JSON이 아닙니다")
+
+
+def _fake_client(monkeypatch, upload):
+    """files.upload만 갈아끼운 가짜 클라이언트. sleep도 없앤다."""
+    from app.services import gemini_batch as gb
+
+    monkeypatch.setattr(gb, "_get_client", lambda: SimpleNamespace(
+        files=SimpleNamespace(upload=upload),
+        batches=SimpleNamespace(create=lambda **kw: SimpleNamespace(name="batches/ok")),
+    ))
+    monkeypatch.setattr(gb.time, "sleep", lambda s: None)
+    return gb
+
+
+def test_upload_retries_on_server_error(monkeypatch):
+    """실측으로 502가 났다 — 재시도가 없으면 보고서 여러 건의 분석이 통째로 날아간다."""
+    calls = []
+
+    def upload(**kw):
+        calls.append(1)
+        if len(calls) < 3:
+            raise ServerError(502, {"message": "Bad Gateway"})
+        return SimpleNamespace(name="files/ok")
+
+    gb = _fake_client(monkeypatch, upload)
+    assert gb._submit_sync(["{}"], "테스트") == ("batches/ok", "files/ok")
+    assert len(calls) == 3
+
+
+def test_upload_gives_up_after_max_attempts(monkeypatch):
+    """무한 재시도는 큐를 막는다 — 상한을 넘으면 예외를 올려 분석을 failed로 만든다."""
+    calls = []
+
+    def upload(**kw):
+        calls.append(1)
+        raise ServerError(502, {"message": "Bad Gateway"})
+
+    gb = _fake_client(monkeypatch, upload)
+    with pytest.raises(ServerError):
+        gb._submit_sync(["{}"], "테스트")
+    assert len(calls) == gb._UPLOAD_ATTEMPTS
