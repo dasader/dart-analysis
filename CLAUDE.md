@@ -200,6 +200,10 @@ components/
 - `corpCode.xml` (ZIP) → 기업 코드 검색
 - `list.json` → 공시 목록 (`pblntf_ty=A` 정기공시만)
 - `document.xml` → 보고서 ZIP 다운로드, `{DATA_DIR}/reports/{corp_code}/{fiscal_year}/{rcept_no}.zip` 저장
+- **ZIP을 디스크에 풀지 않는다.** `extract_text_from_report`가 읽을 때 메모리에서 푼다.
+  풀어 두면 원본의 13배가 쌓인다 — 실측 11건에서 ZIP 7MB인데 `extracted/`가 88MB로
+  디스크의 93%였다(91MB → 6.7MB로 줄었다). 압축 해제는 보고서 1건당 10~80ms라
+  저장해 둘 이유가 없다(디렉터리 읽기와 속도 차이 없음, 텍스트도 11건 전부 바이트 단위 일치)
 - 보고서 ZIP 다운로드 엔드포인트: `GET /api/reports/{id}/download` → `Content-Disposition` 헤더로 `회사명_연도_사업보고서.zip` 파일명 설정
 
 ### 특허 출원인 ↔ DART 기업 조인

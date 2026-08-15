@@ -1,4 +1,5 @@
 import io
+import logging
 import re
 import zipfile
 from datetime import datetime
@@ -14,24 +15,29 @@ from app.services.dart_client import (
     parse_filing_date,
 )
 
+logger = logging.getLogger(__name__)
+
 
 async def download_and_extract(corp_code: str, rcept_no: str, fiscal_year: int) -> str:
-    """보고서 ZIP 다운로드 → 해제 → 저장. 저장 디렉터리 경로 반환."""
+    """보고서 ZIP 다운로드 → 저장. 저장 디렉터리 경로 반환.
+
+    **디스크에 풀어 두지 않는다.** 실측 11건에서 ZIP 7MB인데 풀어 놓은 것이 88MB로
+    원본의 13배였다(디스크의 93%). 읽을 때 메모리에서 풀면 되고, 압축 해제는
+    보고서 1건당 수십 밀리초라 저장해 둘 이유가 없다.
+    """
     report_dir = settings.reports_dir / corp_code / str(fiscal_year)
     report_dir.mkdir(parents=True, exist_ok=True)
 
-    zip_path = report_dir / f"{rcept_no}.zip"
-    extracted_dir = report_dir / "extracted"
-    extracted_dir.mkdir(exist_ok=True)
-
     content = await download_document(rcept_no)
-    zip_path.write_bytes(content)
+    (report_dir / f"{rcept_no}.zip").write_bytes(content)
 
+    # 받은 것이 ZIP이 아니면 여기서 드러내는 편이 낫다 — 나중에 빈 텍스트로 조용히 실패한다
     try:
-        with zipfile.ZipFile(io.BytesIO(content)) as zf:
-            zf.extractall(extracted_dir)
+        with zipfile.ZipFile(io.BytesIO(content)):
+            pass
     except zipfile.BadZipFile:
-        pass
+        logger.warning("ZIP이 아닌 응답: corp_code=%s rcept_no=%s (%d바이트)",
+                       corp_code, rcept_no, len(content))
 
     return str(report_dir)
 
@@ -62,29 +68,36 @@ async def create_report_from_dart(
     return report
 
 
-def extract_text_from_report(file_path: str, max_chars: int | None = None) -> str:
-    """저장된 보고서 디렉터리에서 텍스트를 추출.
+_DOC_SUFFIXES = (".xml", ".html", ".htm")
 
-    extracted/ 디렉터리 내의 XML/HTML 파일들을 읽어 태그를 제거한 텍스트를 반환.
+
+def extract_text_from_report(file_path: str, max_chars: int | None = None) -> str:
+    """저장된 보고서 ZIP에서 텍스트를 추출.
+
+    ZIP 안의 XML/HTML을 **메모리에서** 읽어 태그를 제거한 텍스트를 반환한다.
+    풀어서 저장하지 않는 이유는 download_and_extract 주석 참조.
+
     max_chars가 주어지면 누적 길이가 그 값에 도달하는 즉시 읽기를 중단한다
     (앞부분만 필요한 호출용 — 전체 head/tail 트런케이션이 필요하면 None으로).
     """
-    extracted_dir = Path(file_path) / "extracted"
-    if not extracted_dir.exists():
-        return ""
-
-    texts = []
+    texts: list[str] = []
     total = 0
-    for f in sorted(extracted_dir.iterdir()):
-        if f.suffix.lower() not in (".xml", ".html", ".htm"):
-            continue
-        clean = _strip_tags(f.read_text(encoding="utf-8", errors="ignore"))
-        if not clean.strip():
-            continue
-        texts.append(clean)
-        total += len(clean)
-        if max_chars is not None and total >= max_chars:
-            break
+
+    for zip_path in sorted(Path(file_path).glob("*.zip")):
+        try:
+            with zipfile.ZipFile(zip_path) as zf:
+                for name in sorted(zf.namelist()):
+                    if not name.lower().endswith(_DOC_SUFFIXES):
+                        continue
+                    clean = _strip_tags(zf.read(name).decode("utf-8", errors="ignore"))
+                    if not clean.strip():
+                        continue
+                    texts.append(clean)
+                    total += len(clean)
+                    if max_chars is not None and total >= max_chars:
+                        return "\n\n".join(texts)
+        except zipfile.BadZipFile:
+            logger.warning("깨진 ZIP, 건너뜀: %s", zip_path)
 
     return "\n\n".join(texts)
 
