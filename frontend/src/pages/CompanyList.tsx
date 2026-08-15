@@ -90,15 +90,25 @@ export default function CompanyList() {
             분석 대상 기업
           </h1>
           <p className="mt-1 text-sm text-text-secondary">
-            OpenDART 사업보고서 기반 기업 분석 대시보드
+            추적 중인 기업과 사업보고서 분석 결과. 기술로 기업을 찾으려면{" "}
+            <Link to="/technologies" className="text-accent hover:underline">
+              기술
+            </Link>
+            에서 시작합니다.
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="btn btn-primary"
-        >
-          + 기업 등록
-        </button>
+        <div className="flex items-center gap-2">
+          {/* 태그는 기업에만 붙는 기능이라 최상위 메뉴가 아니라 여기 둔다 */}
+          <Link to="/tags" className="btn btn-outline">
+            태그 관리
+          </Link>
+          <button
+            onClick={() => setShowForm(true)}
+            className="btn btn-primary"
+          >
+            + 기업 등록
+          </button>
+        </div>
       </div>
 
       <div className="mb-6 flex flex-wrap items-center gap-3">

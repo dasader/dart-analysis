@@ -61,6 +61,11 @@ export default function Layout() {
                 </span>
               </div>
             )}
+            {/* 기업이 로고 클릭으로만 갈 수 있는 숨은 화면이었다 — 메뉴로 올린다.
+                태그는 기업에만 붙는 기능이라 최상위가 아니라 기업 목록 화면 안에 둔다 */}
+            <Link to="/" className="nav-link">
+              기업
+            </Link>
             <Link to="/technologies" className="nav-link">
               기술
             </Link>
@@ -74,9 +79,6 @@ export default function Layout() {
                   {failureCount}
                 </span>
               )}
-            </Link>
-            <Link to="/tags" className="nav-link">
-              태그 관리
             </Link>
             <Link
               to="/settings/prompts"
