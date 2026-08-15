@@ -130,6 +130,57 @@ class ApplicantCorp(Base):
     bizr_no = Column(String, nullable=True, index=True)   # 사업자번호 10자리(숫자만)
 
 
+class Technology(Base):
+    """추적할 기술. 설명문에서 뽑은 키워드로 특허를 주기적으로 재검색한다."""
+
+    __tablename__ = "technologies"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(Text, nullable=False)
+    # LLM이 뽑은 검색어(JSON 배열). 사용자가 고칠 수 있어야 해서 저장해 둔다
+    keywords = Column(Text, nullable=False, default="[]")
+    max_companies = Column(Integer, nullable=False, default=5)   # 온보딩 상한(비용 통제)
+    is_active = Column(Boolean, default=True)
+    last_scanned_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    companies = relationship("TechCompany", back_populates="technology",
+                             cascade="all, delete-orphan")
+
+
+class TechCompany(Base):
+    """기술 ↔ 기업. 스캔 결과이자 변동 이력이다.
+
+    first_seen_at / last_seen_at으로 신규 진입과 이탈을 판별하므로
+    별도 스캔 이력 테이블을 두지 않는다.
+    """
+
+    __tablename__ = "tech_companies"
+    __table_args__ = (
+        UniqueConstraint("technology_id", "applicant_name", name="uq_tech_applicant"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    technology_id = Column(Integer, ForeignKey("technologies.id", ondelete="CASCADE"),
+                           nullable=False)
+    # 추적 중인 기업이면 채워진다. available/excluded는 비어 있다
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
+    corp_code = Column(String, nullable=True)
+    corp_name = Column(String, nullable=True)          # DART 표기
+    applicant_name = Column(String, nullable=False)    # 특허 표기 (DART와 다르다)
+    jurir_no = Column(String, nullable=True)
+    patent_count = Column(Integer, default=0)
+    keyword_hits = Column(Text, nullable=False, default="[]")   # 어느 키워드에서 나왔나
+    status = Column(String, nullable=False)            # tracked / available / excluded
+    exclude_reason = Column(String, nullable=True)
+    first_seen_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow)
+
+    technology = relationship("Technology", back_populates="companies")
+
+
 class DartCorp(Base):
     """DART 전체 기업 색인 (corpCode.xml + 법인번호).
 

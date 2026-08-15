@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     scheduler_auto_analyze: bool = False
     # 보고서에서 분석에 쓰이는 구역만 추려 LLM에 보낼지 (입력 ~85% 절감)
     section_extract_enabled: bool = True
+    # 기술 스캔 주기(일). 특허는 출원 후 18개월 뒤 공개되므로 월 1회면 충분하다
+    tech_scan_interval_days: int = 30
+    tech_scan_enabled: bool = True
     # 관리자 키 — 비어 있으면 인증 비활성화(모든 관리 요청 통과)
     admin_key: str = ""
     data_dir: Path = Path("/app/data")

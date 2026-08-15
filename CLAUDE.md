@@ -79,7 +79,7 @@ config.py        pydantic-settings, .env 탐색 순서: [".env", "../.env"], ext
 dependencies.py  require_admin — X-Admin-Key 헤더 검증 (admin_key 미설정 시 통과)
 database.py      SQLAlchemy engine + SessionLocal + Base
 models.py        Company · Report · Analysis · PromptTemplate · BatchJob · AppSetting
-                 · ApplicantCorp · DartCorp · ApiCall
+                 · ApplicantCorp · DartCorp · ApiCall · Technology · TechCompany
 migrate.py       누락 컬럼 추가 (create_all은 기존 테이블에 컬럼을 못 붙인다)
 schemas.py       Pydantic 요청/응답 모델
 seed_prompts.py  3가지 기본 프롬프트 템플릿 DB 시딩
@@ -224,6 +224,32 @@ cd backend
 python -m scripts.load_applicant_corps ~/Corporate_20260720.zip   # ZIP 그대로 (5초)
 python -m scripts.backfill_jurir_no                               # 기존 기업 채우기
 ```
+
+### 기술 추적 (Phase 2)
+
+기술을 등록해 두면 특허를 주기적으로 재검색해 관련 기업을 찾는다.
+설계: `docs/superpowers/specs/2026-08-14-technology-tracking-design.md`
+
+```
+/technologies              기술 목록 (최상위 메뉴)
+/technologies/:id          펼쳐보기 — 상태별 기업 + 변동
+```
+
+**자동 갱신이 하는 일은 특허 재검색 하나뿐이다.** 발견된 기업을 `Company`에 등록하면
+보고서 수집·분석은 기존 스케줄러(`check_and_download_reports`·`scheduler_auto_analyze`)가
+이어받는다. 그래서 새로 만든 스케줄러 job은 `scan_technologies` 하나다.
+
+주기가 **월 1회(기본)** 인 이유: 특허는 출원 후 18개월 뒤 공개된다. 오늘 그 기술을
+시작한 기업이 검색에 잡히려면 1년 반이 걸리므로 주 1회는 과잉이고, 월 1회면
+기술 100개까지 KIPRIS 한도의 50%다.
+
+`TechCompany`를 셋으로 나눈다 — 처방이 다르기 때문이다.
+`tracked`(분석 결과 있음) / `available`(등록만 하면 됨) / `excluded`(대학·연구소·외국).
+
+**스캔 결과를 부분 저장하지 않는다.** 키워드 일부만 성공한 채로 병합하면 나오지 않은
+기업이 "이탈"로 잘못 찍힌다. 한도 초과 시 `ScanIncomplete`를 던지고 아무것도 쓰지 않는다.
+
+이탈 기업은 **지우지 않는다.** `last_seen_at`이 뒤처지는 것으로 드러낸다.
 
 ### 기술 → 기업 파이프라인 (프로토타입)
 
