@@ -3,6 +3,7 @@ import { fetchPrompts, updatePrompt } from "../api/client";
 import { getErrorMessage } from "../lib/errors";
 import AdminButton from "../components/AdminButton";
 import SettingToggles from "../components/SettingToggles";
+import BackupPanel from "../components/BackupPanel";
 import { useAdmin } from "../context/AdminContext";
 import type { PromptTemplate } from "../types";
 
@@ -72,6 +73,8 @@ export default function PromptSettings() {
       )}
 
       <SettingToggles />
+
+      <BackupPanel />
 
       {/* 플레이스홀더 안내 */}
       <div className="mb-6 rounded-lg border border-border bg-surface px-5 py-4">
