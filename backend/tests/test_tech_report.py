@@ -368,6 +368,36 @@ def test_tracked_without_report_is_onboarded(db, tech):
     assert [x["applicant"] for x in picked] == ["나소재"]
 
 
+@pytest.mark.parametrize("limit,expected", [(0, 8), (3, 3), (99, 8)])
+def test_onboard_limit_zero_means_all(db, limit, expected):
+    """분석 상한 0 = 전체. 후보를 다 태우겠다는 선택을 표현할 방법이 필요하다.
+
+    DartCorp에 없는 후보를 주면 전부 '색인 조회 실패'로 떨어지므로,
+    failed 개수로 실제 몇 건을 집어 들었는지 잴 수 있다(외부 호출 없이).
+    """
+    import asyncio
+
+    from app.services import tech_pipeline
+
+    cands = [{"applicant": f"기업{i}", "corp_code": f"{i:08d}", "patents": 10 - i}
+             for i in range(8)]
+    out = asyncio.run(tech_pipeline.onboard(db, cands, limit))
+    assert len(out["failed"]) == expected
+    assert out["registered"] == []
+
+
+def test_match_companies_has_no_default_limit():
+    """예전 기본값 30이 후보를 조용히 잘라 '전체'를 골라도 31번째부터 안 보였다.
+
+    이 함수는 DB 조회만 하므로(외부 API를 부르지 않는다) 상한을 둘 이유가 없다.
+    """
+    import inspect
+
+    from app.services import patent_search
+
+    assert inspect.signature(patent_search.match_companies).parameters["limit"].default is None
+
+
 def test_onboard_targets_are_ordered_by_patent_count(db):
     """onboard는 앞에서부터 자르므로 순서가 곧 우선순위다.
 

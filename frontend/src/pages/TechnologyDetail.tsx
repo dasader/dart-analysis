@@ -101,6 +101,7 @@ export default function TechnologyDetailPage() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editKeywords, setEditKeywords] = useState<string | null>(null);
+  const [editMax, setEditMax] = useState<number | null>(null);
   const [reporting, setReporting] = useState(false);
 
   const load = useCallback(async () => {
@@ -118,10 +119,20 @@ export default function TechnologyDetailPage() {
   }, [load]);
 
   const handleScan = async (onboard: boolean) => {
-    if (onboard && !window.confirm(
-      `상위 ${tech?.max_companies}개 기업을 등록하고 사업보고서를 분석합니다.\n` +
-      `보고서 1건당 약 $0.014의 비용이 발생합니다. 계속할까요?`,
-    )) return;
+    if (onboard) {
+      // 상한이 0(전체)이면 몇 개가 걸릴지 미리 알려야 한다 — 비용이 기업 수만큼 곱해진다.
+      // 다시 스캔하면 후보가 늘 수 있으므로 "최소" 몇 건인지로 말한다.
+      const cap = tech?.max_companies ?? 0;
+      const candidates = tech?.available_count ?? 0;
+      const n = cap === 0 ? candidates : Math.min(cap, candidates);
+      if (!window.confirm(
+        (cap === 0
+          ? `등록 가능한 기업 ${candidates}개사를 모두 등록하고 사업보고서를 분석합니다.\n`
+          : `상위 ${cap}개 기업을 등록하고 사업보고서를 분석합니다(현재 후보 ${candidates}개).\n`) +
+        `보고서 1건당 약 $0.014 — 지금 기준 약 $${(n * 0.0135).toFixed(2)}가 발생합니다.\n` +
+        `계속할까요?`,
+      )) return;
+    }
 
     setScanning(true);
     setError(null);
@@ -155,6 +166,17 @@ export default function TechnologyDetailPage() {
     try {
       await updateTechnology(techId, { keywords: list });
       setEditKeywords(null);
+      await load();
+    } catch (e) {
+      setError(getErrorMessage(e));
+    }
+  };
+
+  const handleSaveMax = async () => {
+    if (editMax === null) return;
+    try {
+      await updateTechnology(techId, { max_companies: editMax });
+      setEditMax(null);
       await load();
     } catch (e) {
       setError(getErrorMessage(e));
@@ -252,6 +274,43 @@ export default function TechnologyDetailPage() {
             </button>
           </div>
         )}
+
+        {/* 분석 상한 — 비용이 기업 수만큼 곱해지므로(1건당 약 $0.0135) 여기서 정한다 */}
+        <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+          <div>
+            <span className="text-sm font-medium text-text-primary">분석 상한</span>
+            <span className="ml-2 text-xs text-text-tertiary">
+              「스캔 + 분석」이 한 번에 등록·분석할 기업 수
+            </span>
+          </div>
+          {editMax === null ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm tabular-nums text-text-secondary">
+                {tech.max_companies === 0 ? "전체" : `상위 ${tech.max_companies}개`}
+              </span>
+              <AdminButton onClick={() => setEditMax(tech.max_companies)}
+                           className="btn btn-text text-xs">
+                편집
+              </AdminButton>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs text-text-secondary">
+                <input type="checkbox" checked={editMax === 0}
+                       onChange={(e) => setEditMax(e.target.checked ? 0 : 5)} />
+                전체
+              </label>
+              <input
+                type="number" min={1} value={editMax === 0 ? "" : editMax}
+                disabled={editMax === 0}
+                onChange={(e) => setEditMax(Number(e.target.value) || 1)}
+                className="w-20 rounded-lg border border-border px-2 py-1 text-sm disabled:bg-background"
+              />
+              <button onClick={handleSaveMax} className="btn btn-primary btn-sm">저장</button>
+              <button onClick={() => setEditMax(null)} className="btn btn-ghost btn-sm">취소</button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 스캔 결과 요약 */}

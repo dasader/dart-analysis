@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime, date
 
 from app.constants import AnalysisType
@@ -142,14 +142,15 @@ class TechnologyCreate(BaseModel):
     name: str
     description: str
     keywords: list[str] | None = None      # 없으면 LLM이 뽑는다
-    max_companies: int = 5
+    # 온보딩 상한(비용 통제). 0이면 후보 전체를 분석한다
+    max_companies: int = Field(default=5, ge=0)
 
 
 class TechnologyUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     keywords: list[str] | None = None
-    max_companies: int | None = None
+    max_companies: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
 
