@@ -147,6 +147,9 @@ export interface Technology {
 
 export interface TechnologyDetail extends Technology {
   companies: TechCompany[];
+  report_md: string | null;
+  report_generated_at: string | null;
+  report_basis: string | null;
 }
 
 export interface ScanResult {

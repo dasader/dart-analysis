@@ -185,6 +185,9 @@ class TechnologyResponse(BaseModel):
 
 class TechnologyDetail(TechnologyResponse):
     companies: list[TechCompanyResponse]
+    report_md: str | None = None
+    report_generated_at: datetime | None = None
+    report_basis: str | None = None
 
 
 # --- App Settings ---

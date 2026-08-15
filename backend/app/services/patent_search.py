@@ -62,6 +62,9 @@ def _parse(xml_text: str) -> tuple[str, int, list[dict]]:
             "app_date": (it.findtext("applicationDate") or "").strip(),
             "ipc": (it.findtext("ipcNumber") or "").strip(),
             "status": (it.findtext("registerStatus") or "").strip(),
+            # 초록은 기술 종합 보고서의 유일한 기술 근거다 — 사업보고서에는
+            # 아직 양산 전인 기술이 실리지 않는다(실측: 삼성전자 원문 '전고체' 0회)
+            "abstract": (it.findtext("astrtCont") or "").strip(),
         })
     return code, int(total_raw or 0), items
 

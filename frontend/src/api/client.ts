@@ -178,6 +178,12 @@ export function scanTechnology(id: number, onboard = false): Promise<ScanResult>
   return request(`/technologies/${id}/scan?onboard=${onboard}`, { method: "POST" });
 }
 
+export function generateTechReport(
+  id: number,
+): Promise<{ report_md: string; report_generated_at: string }> {
+  return request(`/technologies/${id}/report`, { method: "POST" });
+}
+
 // --- App Settings ---
 
 export function fetchAppSettings(): Promise<AppSetting[]> {

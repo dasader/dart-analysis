@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import {
-  deleteTechnology, fetchTechnology, scanTechnology, updateTechnology,
+  deleteTechnology, fetchTechnology, generateTechReport, scanTechnology, updateTechnology,
 } from "../api/client";
 import { getErrorMessage } from "../lib/errors";
 import AdminButton from "../components/AdminButton";
+import TechReport from "../components/TechReport";
 import type { ScanResult, TechCompany, TechnologyDetail as TechDetail } from "../types";
 
 const STATUS_META: Record<string, { title: string; hint: string; cls: string }> = {
@@ -100,6 +101,7 @@ export default function TechnologyDetailPage() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editKeywords, setEditKeywords] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -131,6 +133,19 @@ export default function TechnologyDetailPage() {
       setError(getErrorMessage(e));
     } finally {
       setScanning(false);
+    }
+  };
+
+  const handleReport = async () => {
+    setReporting(true);
+    setError(null);
+    try {
+      await generateTechReport(techId);
+      await load();
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setReporting(false);
     }
   };
 
@@ -267,6 +282,52 @@ export default function TechnologyDetailPage() {
           )}
         </div>
       )}
+
+      {/* 종합 보고서 — 특허가 주근거다. 사업보고서는 아직 양산 전인 기술을 싣지 않으므로
+          여기 없는 기업이 그 기술을 안 하는 것은 아니다 */}
+      <div className="mb-6 rounded-xl border border-border bg-surface px-5 py-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary">종합 보고서</h3>
+            {tech.report_generated_at ? (
+              <>
+                {/* 무엇을 근거로 쓴 보고서인지 — 특허 기간·사업보고서 연도가
+                    안 보이면 언제 기준인지 알 수 없다 */}
+                {tech.report_basis && (
+                  <p className="mt-0.5 text-xs font-medium text-text-secondary">
+                    근거: {tech.report_basis}
+                  </p>
+                )}
+                <p className="mt-0.5 text-xs text-text-tertiary">
+                  생성: {new Date(tech.report_generated_at).toLocaleString("ko-KR")}
+                </p>
+              </>
+            ) : (
+              <p className="mt-0.5 text-xs text-text-tertiary">
+                특허 초록과 추적 중 기업의 사업보고서 분석을 묶어 한 편으로 정리합니다.
+              </p>
+            )}
+          </div>
+          <AdminButton
+            onClick={handleReport}
+            disabled={reporting}
+            className="btn btn-action btn-sm"
+            title="특허를 다시 검색해 보고서를 만듭니다 (키워드 수만큼 KIPRIS 호출)"
+          >
+            {reporting ? "생성 중..." : tech.report_md ? "다시 생성" : "보고서 생성"}
+          </AdminButton>
+        </div>
+        {reporting && (
+          <p className="mt-3 text-xs text-text-secondary">
+            특허 검색 후 한 번에 작성합니다. 보통 1분 내에 끝납니다.
+          </p>
+        )}
+        {tech.report_md && !reporting && (
+          <div className="mt-4 border-t border-border pt-4">
+            <TechReport markdown={tech.report_md} />
+          </div>
+        )}
+      </div>
 
       {(["tracked", "available", "excluded"] as const).map((s) => (
         <Section key={s} status={s} rows={tech.companies.filter((c) => c.status === s)} />

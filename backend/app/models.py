@@ -143,6 +143,12 @@ class Technology(Base):
     max_companies = Column(Integer, nullable=False, default=5)   # 온보딩 상한(비용 통제)
     is_active = Column(Boolean, default=True)
     last_scanned_at = Column(DateTime, nullable=True)
+    # 기술 종합 보고서(마크다운). 기술당 최신 1건만 둔다 — 이력이 필요해지면 그때 테이블로 뺀다
+    report_md = Column(Text, nullable=True)
+    report_generated_at = Column(DateTime, nullable=True)
+    # 무엇을 근거로 쓴 보고서인지 — 특허 출원일 범위 + 사업보고서 연도.
+    # 본문에도 들어가지만 화면 머리말에서 바로 보이려면 따로 있어야 한다
+    report_basis = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 # (테이블, 컬럼, DDL 타입) — 이미 있으면 건너뛴다
 ADDITIONS: list[tuple[str, str, str]] = [
     ("companies", "jurir_no", "VARCHAR"),
+    ("technologies", "report_md", "TEXT"),
+    ("technologies", "report_generated_at", "DATETIME"),
+    ("technologies", "report_basis", "VARCHAR"),
 ]
 
 

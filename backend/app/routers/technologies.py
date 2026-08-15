@@ -12,7 +12,7 @@ from app.schemas import (
     TechCompanyResponse, TechnologyCreate, TechnologyDetail,
     TechnologyResponse, TechnologyUpdate,
 )
-from app.services import api_usage, keyword_extract, tech_scan
+from app.services import api_usage, keyword_extract, tech_report, tech_scan
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,9 @@ def get_technology(tech_id: int, db: Session = Depends(get_db)):
     return TechnologyDetail(
         **base.model_dump(),
         companies=[_company_response(tc, tech.last_scanned_at) for tc in rows],
+        report_md=tech.report_md,
+        report_generated_at=tech.report_generated_at,
+        report_basis=tech.report_basis,
     )
 
 
@@ -130,6 +133,20 @@ async def scan_technology(tech_id: int, onboard: bool = False,
         return await tech_scan.scan(db, tech, onboard=onboard)
     except tech_scan.ScanIncomplete as e:
         raise HTTPException(409, str(e)) from e
+
+
+@router.post("/{tech_id}/report", dependencies=[Depends(require_admin)])
+async def generate_report(tech_id: int, db: Session = Depends(get_db)):
+    """기술 종합 보고서 생성. 특허를 다시 검색하므로 KIPRIS 한도를 쓴다(키워드 수만큼)."""
+    tech = get_or_404(db, Technology, tech_id, "기술을 찾을 수 없습니다.")
+    try:
+        md = await tech_report.generate(db, tech)
+    except api_usage.QuotaExceeded as e:
+        raise HTTPException(429, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"report_md": md, "report_generated_at": tech.report_generated_at,
+            "report_basis": tech.report_basis}
 
 
 @router.get("/{tech_id}/keywords/suggest", dependencies=[Depends(require_admin)])
