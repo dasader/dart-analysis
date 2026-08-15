@@ -13,7 +13,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models import Technology, TechCompany
+from app.models import Report, Technology, TechCompany
 from app.services import api_usage, patent_search, tech_pipeline
 
 logger = logging.getLogger(__name__)
@@ -96,10 +96,12 @@ async def scan(db: Session, tech: Technology, pages: int = 1, top: int = 30,
     db.commit()
 
     onboarded = None
-    if onboard and matched["available"]:
-        onboarded = await tech_pipeline.onboard(db, matched["available"], tech.max_companies)
-        # 등록된 기업은 tracked로 승격된다 — 다음 스캔을 기다리지 않고 바로 반영
-        _promote(db, tech, onboarded)
+    if onboard:
+        targets = _onboard_targets(db, matched)
+        if targets:
+            onboarded = await tech_pipeline.onboard(db, targets, tech.max_companies)
+            # 등록된 기업은 tracked로 승격된다 — 다음 스캔을 기다리지 않고 바로 반영
+            _promote(db, tech, onboarded)
 
     return {
         "technology_id": tech.id,
@@ -115,14 +117,45 @@ async def scan(db: Session, tech: Technology, pages: int = 1, top: int = 30,
     }
 
 
+def _tracked_without_report(db: Session, tracked: list[dict]) -> list[dict]:
+    """이미 등록됐지만 사업보고서가 없는 기업.
+
+    `onboard`는 corp_code로 기업을 찾으므로 available과 같은 모양이면 그대로 태울 수 있다.
+    """
+    have = {cid for (cid,) in db.query(Report.company_id)
+            .filter(Report.file_path.isnot(None)).distinct().all()}
+    return [x for x in tracked if x.get("company_id") and x["company_id"] not in have]
+
+
+def _onboard_targets(db: Session, matched: dict) -> list[dict]:
+    """온보딩 대상 — 미등록 기업 + **등록됐지만 보고서가 없는 기업**.
+
+    available만 태우면 이미 등록된 기업이 영영 빠진다. LG에너지솔루션(전고체 특허
+    16건)이 등록만 돼 있고 보고서가 0건이라, 종합 보고서에서 "사업보고서에 언급 없음"
+    으로 잘못 읽혔다 — 전업 배터리 회사가 그 기술을 안 하는 것처럼 보였다.
+
+    `onboard`는 앞에서부터 max_companies개를 자르므로 **순서가 곧 우선순위다.**
+    그냥 이어붙이면 특허 3건짜리 미등록 기업이 16건짜리 기존 기업보다 먼저 간다.
+    """
+    targets = matched["available"] + _tracked_without_report(db, matched["tracked"])
+    return sorted(targets, key=lambda x: -x["patents"])
+
+
 def _promote(db: Session, tech: Technology, onboarded: dict) -> None:
-    """온보딩으로 등록된 기업을 available → tracked로 올린다."""
-    names = {r["corp_name"] for r in onboarded.get("registered", [])}
-    if not names:
+    """온보딩으로 등록된 기업을 available → tracked로 올리고 **company_id를 채운다.**
+
+    company_id를 빠뜨리면 status만 tracked가 되어 겉보기엔 멀쩡한데,
+    화면에서 기업 상세로 가는 링크가 생기지 않고 종합 보고서도 그 기업의
+    사업보고서 분석을 찾지 못한다(실측으로 겪었다 — 3사가 조용히 누락됐다).
+    """
+    by_name = {r["corp_name"]: r["company_id"] for r in onboarded.get("registered", [])}
+    if not by_name:
         return
     for tc in db.query(TechCompany).filter(
             TechCompany.technology_id == tech.id,
             TechCompany.status == "available").all():
-        if tc.corp_name in names:
+        # 여기서 비교하는 corp_name은 양쪽 다 DART 표기다(특허 출원인명이 아니다)
+        if tc.corp_name in by_name:
             tc.status = "tracked"
+            tc.company_id = by_name[tc.corp_name]
     db.commit()
