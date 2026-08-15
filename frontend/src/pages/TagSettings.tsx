@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { fetchTags, createTag, updateTag, deleteTag } from "../api/client";
 import TagChip from "../components/TagChip";
 import ColorPicker from "../components/ColorPicker";
@@ -67,7 +68,11 @@ export default function TagSettings() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-navy">태그 관리</h1>
+        {/* 최상위 메뉴에서 내려온 화면 — 어디서 왔는지 길을 남긴다 */}
+        <Link to="/" className="text-sm text-text-tertiary hover:text-accent">
+          ← 기업
+        </Link>
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-navy">태그 관리</h1>
         <p className="mt-1 text-sm text-text-secondary">
           기업에 할당할 태그를 미리 정의합니다.
         </p>
