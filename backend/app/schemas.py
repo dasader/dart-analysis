@@ -136,6 +136,60 @@ class ExtractionFailure(BaseModel):
     failed_at: datetime | None
 
 
+# --- Technology ---
+
+class TechnologyCreate(BaseModel):
+    name: str
+    description: str
+    keywords: list[str] | None = None      # 없으면 LLM이 뽑는다
+    max_companies: int = 5
+
+
+class TechnologyUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    keywords: list[str] | None = None
+    max_companies: int | None = None
+    is_active: bool | None = None
+
+
+class TechCompanyResponse(BaseModel):
+    id: int
+    company_id: int | None
+    corp_code: str | None
+    corp_name: str | None
+    applicant_name: str
+    patent_count: int
+    keyword_hits: list[str]
+    status: str
+    exclude_reason: str | None
+    first_seen_at: datetime | None
+    last_seen_at: datetime | None
+    is_new: bool          # 마지막 스캔에서 처음 나타났다
+    is_gone: bool         # 마지막 스캔에 나오지 않았다
+
+
+class TechnologyResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    keywords: list[str]
+    max_companies: int
+    is_active: bool
+    last_scanned_at: datetime | None
+    created_at: datetime
+    tracked_count: int
+    available_count: int
+    excluded_count: int
+
+
+class TechnologyDetail(TechnologyResponse):
+    companies: list[TechCompanyResponse]
+    report_md: str | None = None
+    report_generated_at: datetime | None = None
+    report_basis: str | None = None
+
+
 # --- App Settings ---
 
 class AppSettingResponse(BaseModel):

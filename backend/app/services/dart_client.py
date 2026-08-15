@@ -168,6 +168,20 @@ def extract_fiscal_year_from_name(report_name: str) -> int | None:
     return None
 
 
+async def fetch_jurir_no(corp_code: str) -> str | None:
+    """기업개황에서 법인등록번호(13자리 숫자)를 가져온다.
+
+    corpCode.xml에는 법인번호가 없어(corp_code·corp_name·stock_code·modify_date뿐)
+    기업마다 company.json을 한 번 더 불러야 한다. 특허 출원인과 조인하는 유일한 키다.
+    """
+    resp = await _dart_get("company.json", {"corp_code": corp_code})
+    data = resp.json()
+    if data.get("status") != "000":
+        return None
+    digits = re.sub(r"\D", "", data.get("jurir_no") or "")
+    return digits if len(digits) == 13 else None
+
+
 async def download_document(rcept_no: str) -> bytes:
     """OpenDART 문서 다운로드 API로 ZIP 파일 다운로드."""
     resp = await _dart_get("document.xml", {"rcept_no": rcept_no}, timeout=60)

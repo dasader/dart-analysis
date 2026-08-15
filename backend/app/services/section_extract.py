@@ -38,9 +38,25 @@ KEEP = {"I", "II", "XII"}
 # 본문의 끝을 알리는 표지 — 실측상 모든 보고서에서 이 순서로 나타난다.
 _BODY_END = re.compile(r"【\s*전문가의 확인\s*】|독립된 감사인의 감사보고서")
 
+# 상호참조를 감싸는 따옴표. 진짜 대제목 뒤에는 하위 항목("1. …")이 오지 따옴표가 오지 않는다
+_QUOTES_CLOSE = frozenset("'\"’”」』")
+_QUOTES_OPEN = frozenset("'\"‘“「『")
+
 
 class ExtractionFailed(Exception):
     """보고서 형식이 예상과 달라 구역을 신뢰할 수 없다."""
+
+
+def _is_cross_reference(text: str, start: int, end: int) -> bool:
+    """본문 안에서 다른 구역을 가리키는 문장인가.
+
+    "II.사업의 내용'을 참조하시기 바랍니다", "'III. 재무에 관한 사항'을 참고하시기"처럼
+    **따옴표로 감싼 인용**이 상호참조의 표지다. 이것을 대제목으로 오인하면 앞 구역이
+    거기서 끊긴다 — 실측에서 알앤엘재생의학연구소의 II(사업의 내용)가 740자로 잘려
+    본문 70,434자가 통째로 버려졌다.
+    """
+    return (text[end:end + 1] in _QUOTES_CLOSE
+            or text[max(0, start - 1):start] in _QUOTES_OPEN)
 
 
 def find_sections(text: str) -> list[tuple[int, str]]:
@@ -53,7 +69,8 @@ def find_sections(text: str) -> list[tuple[int, str]]:
     occurrences: dict[str, list[int]] = {}
     for roman, title in SECTIONS:
         pattern = re.compile(rf"{roman}\.\s*{re.escape(title)}")
-        found = [m.start() for m in pattern.finditer(text)]
+        found = [m.start() for m in pattern.finditer(text)
+                 if not _is_cross_reference(text, m.start(), m.end())]
         if found:
             occurrences[roman] = found
 

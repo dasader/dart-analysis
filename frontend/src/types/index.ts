@@ -115,6 +115,57 @@ export interface QueueStatus {
   running_reports: number;
 }
 
+export interface TechCompany {
+  id: number;
+  company_id: number | null;
+  corp_code: string | null;
+  corp_name: string | null;
+  applicant_name: string;
+  patent_count: number;
+  keyword_hits: string[];
+  status: "tracked" | "available" | "excluded";
+  exclude_reason: string | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  is_new: boolean;
+  is_gone: boolean;
+}
+
+export interface Technology {
+  id: number;
+  name: string;
+  description: string;
+  keywords: string[];
+  max_companies: number;
+  is_active: boolean;
+  last_scanned_at: string | null;
+  created_at: string;
+  tracked_count: number;
+  available_count: number;
+  excluded_count: number;
+}
+
+export interface TechnologyDetail extends Technology {
+  companies: TechCompany[];
+  report_md: string | null;
+  report_generated_at: string | null;
+  report_basis: string | null;
+}
+
+export interface ScanResult {
+  technology_id: number;
+  keywords: string[];
+  searched: { word: string; total: number; broad: boolean }[];
+  applicants: number;
+  tracked: number;
+  available: number;
+  excluded: number;
+  new: number;
+  kept: number;
+  dropped: number;
+  onboarded: { registered: { corp_name: string }[]; queued_reports: number } | null;
+}
+
 /** 런타임에 바꿀 수 있는 설정 (DB 저장, 재시작 불필요) */
 export interface AppSetting {
   key: string;

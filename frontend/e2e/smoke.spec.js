@@ -77,6 +77,58 @@ test('구분선 빠진 표도 실제 표로 렌더된다', async ({ page }) => {
   await expect(page.locator('article')).not.toContainText('| 두산밥캣 |')
 })
 
+test('기술: 목록 렌더 + 등록은 관리자만', async ({ page }) => {
+  await page.route('**/api/technologies', r => r.fulfill({
+    json: [{ id: 1, name: '전고체 배터리', description: '설명', keywords: ['황화물계 고체전해질'],
+             max_companies: 3, is_active: true, last_scanned_at: '2026-08-15T00:00:00',
+             created_at: '2026-08-15T00:00:00',
+             tracked_count: 3, available_count: 6, excluded_count: 21 }] }))
+
+  await page.goto('/')
+  await page.getByRole('link', { name: '기술', exact: true }).click()
+  await expect(page).toHaveURL(/\/technologies$/)
+  await expect(page.getByRole('link', { name: '전고체 배터리' })).toBeVisible()
+  // 미로그인 상태에서는 등록이 잠긴다
+  await expect(page.getByRole('button', { name: '기술 등록' })).toBeDisabled()
+})
+
+test('기술 상세: 상태별로 나눠 보여준다', async ({ page }) => {
+  const company = (o) => ({
+    id: o.id, company_id: o.company_id ?? null, corp_code: null,
+    corp_name: o.corp_name ?? null, applicant_name: o.applicant_name,
+    patent_count: o.patents, keyword_hits: o.kws ?? [], status: o.status,
+    exclude_reason: o.reason ?? null, first_seen_at: null, last_seen_at: null,
+    is_new: o.is_new ?? false, is_gone: false,
+  })
+  await page.route('**/api/technologies/1', r => r.fulfill({
+    json: {
+      id: 1, name: '전고체 배터리', description: '설명',
+      keywords: ['황화물계 고체전해질'], max_companies: 3, is_active: true,
+      last_scanned_at: '2026-08-15T00:00:00', created_at: '2026-08-15T00:00:00',
+      tracked_count: 1, available_count: 1, excluded_count: 1,
+      companies: [
+        company({ id: 1, company_id: 7, corp_name: 'LG화학',
+                  applicant_name: '주식회사 엘지화학', patents: 16, kws: ['a', 'b'],
+                  status: 'tracked', is_new: true }),
+        company({ id: 2, corp_name: '삼성SDI', applicant_name: '삼성에스디아이 주식회사',
+                  patents: 18, kws: ['a'], status: 'available' }),
+        company({ id: 3, applicant_name: '한국전기연구원', patents: 23, kws: ['a'],
+                  status: 'excluded', reason: '법인번호 없음(개인·대학·연구소·외국)' }),
+      ],
+    } }))
+
+  await page.goto('/technologies/1', { waitUntil: 'networkidle' })
+  await expect(page.getByRole('heading', { name: '추적 중 (1)' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '등록 가능 (1)' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '제외 (1)' })).toBeVisible()
+
+  // 특허 표기와 DART 표기가 다르다는 걸 드러내야 한다
+  await expect(page.getByText('특허: 삼성에스디아이 주식회사')).toBeVisible()
+  // 추적 중인 기업은 기업 화면으로 이어진다
+  await expect(page.getByRole('link', { name: 'LG화학' })).toHaveAttribute('href', '/companies/7')
+  await expect(page.getByText('신규').first()).toBeVisible()
+})
+
 test('관리 기능은 로그인 전 안내를 노출', async ({ page }) => {
   await page.goto('/tags')
   await expect(page.getByText('관리자 로그인이 필요합니다')).toBeVisible()

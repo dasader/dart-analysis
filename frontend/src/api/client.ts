@@ -10,6 +10,9 @@ import type {
   QueueStatus,
   ExtractionFailure,
   AppSetting,
+  Technology,
+  TechnologyDetail,
+  ScanResult,
   PromptTemplate,
   PromptUpdate,
   Tag,
@@ -142,6 +145,43 @@ export function fetchQueueStatus(): Promise<QueueStatus> {
 
 export function fetchSchedulerStatus(): Promise<SchedulerStatus> {
   return request("/scheduler/status");
+}
+
+// --- Technologies ---
+
+export function fetchTechnologies(): Promise<Technology[]> {
+  return request("/technologies");
+}
+
+export function fetchTechnology(id: number): Promise<TechnologyDetail> {
+  return request(`/technologies/${id}`);
+}
+
+export function createTechnology(body: {
+  name: string; description: string; keywords?: string[]; max_companies?: number;
+}): Promise<Technology> {
+  return request("/technologies", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateTechnology(
+  id: number,
+  body: Partial<{ name: string; description: string; keywords: string[]; max_companies: number; is_active: boolean }>,
+): Promise<Technology> {
+  return request(`/technologies/${id}`, { method: "PUT", body: JSON.stringify(body) });
+}
+
+export function deleteTechnology(id: number): Promise<void> {
+  return request(`/technologies/${id}`, { method: "DELETE" });
+}
+
+export function scanTechnology(id: number, onboard = false): Promise<ScanResult> {
+  return request(`/technologies/${id}/scan?onboard=${onboard}`, { method: "POST" });
+}
+
+export function generateTechReport(
+  id: number,
+): Promise<{ report_md: string; report_generated_at: string }> {
+  return request(`/technologies/${id}/report`, { method: "POST" });
 }
 
 // --- App Settings ---

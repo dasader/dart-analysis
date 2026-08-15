@@ -1,7 +1,5 @@
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import AdminButton from "./AdminButton";
-import { normalizeTables } from "../lib/markdown";
+import Markdown from "./Markdown";
 import type { Analysis } from "../types";
 
 interface Props {
@@ -10,23 +8,6 @@ interface Props {
   onRun: () => void;
   running: boolean;
 }
-
-const PROSE_CLASSES = `
-  prose prose-sm max-w-none
-  prose-headings:font-semibold prose-headings:text-navy prose-headings:mt-6 prose-headings:mb-3
-  prose-h2:text-base prose-h3:text-sm
-  prose-p:text-text-primary prose-p:leading-relaxed prose-p:my-3
-  prose-li:text-text-primary prose-li:leading-relaxed
-  prose-strong:text-text-primary
-  prose-table:w-full prose-table:text-sm prose-table:border-collapse
-  prose-thead:bg-background
-  prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:font-semibold prose-th:text-text-secondary
-  prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2 prose-td:text-text-primary
-  prose-tr:even:bg-background/40
-  prose-hr:border-border prose-hr:my-6
-  prose-blockquote:border-l-accent prose-blockquote:text-text-secondary
-  prose-code:text-accent prose-code:bg-background prose-code:px-1 prose-code:rounded
-`.trim();
 
 /** 보고서 1건 × 분석 유형 1개의 결과를 상태에 따라 보여준다. */
 export default function AnalysisView({ analysis, onRun, running }: Props) {
@@ -43,11 +24,7 @@ export default function AnalysisView({ analysis, onRun, running }: Props) {
             </span>
           )}
         </div>
-        <article className={PROSE_CLASSES}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {normalizeTables(analysis.result_summary || "")}
-          </ReactMarkdown>
-        </article>
+        <Markdown>{analysis.result_summary || ""}</Markdown>
       </div>
     );
   }

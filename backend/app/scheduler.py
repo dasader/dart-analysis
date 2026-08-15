@@ -1,15 +1,20 @@
+import logging
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import settings
 from app.constants import ANALYSIS_TYPES, AnalysisStatus, REPORT_TYPE_ANNUAL
 from app.database import SessionLocal
-from app.models import Analysis, Company, Report
+from app.models import Analysis, Company, Report, Technology
 from app.services import app_settings
 from app.services.analysis_queue import enqueue
 from app.services.batch_poller import poll_batches
+from app.services import tech_scan
 from app.services.dart_client import list_reports, parse_filing_date
 from app.services.report_service import create_report_from_dart
+
+logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 
@@ -75,6 +80,31 @@ def _request_analysis(db, report: Report) -> None:
     enqueue(report.id)
 
 
+async def scan_technologies():
+    """활성 기술의 특허를 재검색해 새 기업을 찾는다.
+
+    발견된 기업을 Company에 등록하기만 하면 보고서 수집·분석은 기존 스케줄러가
+    이어받는다 — 여기서 온보딩까지 하지 않는 이유다(비용이 나가는 쪽은 그쪽 토글이 잠근다).
+    """
+    db = SessionLocal()
+    try:
+        if not app_settings.get(db, "tech_scan_enabled"):
+            return
+        techs = db.query(Technology).filter(Technology.is_active == True).all()
+        for tech in techs:
+            try:
+                stats = await tech_scan.scan(db, tech, onboard=False)
+                logger.info("기술 스캔 완료: %s — 신규 %d / 이탈 %d",
+                            tech.name, stats["new"], stats["dropped"])
+            except tech_scan.ScanIncomplete as e:
+                logger.warning("기술 스캔 중단: %s — %s", tech.name, e)
+                break            # 한도 문제면 남은 기술도 마찬가지다
+            except Exception:
+                logger.exception("기술 스캔 실패: %s", tech.name)
+    finally:
+        db.close()
+
+
 def start_scheduler():
     scheduler.add_job(
         check_and_download_reports,
@@ -86,6 +116,12 @@ def start_scheduler():
         poll_batches,
         trigger=IntervalTrigger(seconds=settings.batch_poll_interval_secs),
         id="poll_batches",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scan_technologies,
+        trigger=IntervalTrigger(days=settings.tech_scan_interval_days),
+        id="scan_technologies",
         replace_existing=True,
     )
     scheduler.start()

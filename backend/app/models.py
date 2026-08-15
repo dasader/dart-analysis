@@ -23,6 +23,8 @@ class Company(Base):
     corp_code = Column(String, unique=True, nullable=False)
     corp_name = Column(String, nullable=False)
     stock_code = Column(String, nullable=True)
+    # 특허 출원인과 조인하기 위한 법인등록번호(13자리, 숫자만). company.json에서 채운다.
+    jurir_no = Column(String, nullable=True, index=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -107,6 +109,121 @@ class PromptTemplate(Base):
     system_prompt = Column(Text, nullable=False)
     user_prompt_template = Column(Text, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ApplicantCorp(Base):
+    """특허 출원인의 법인·사업자 번호 (KIPRIS 벌크 `CORP_APPLICANT.txt`).
+
+    특허 출원인명은 한글 표기("주식회사 엘지화학"), DART는 영문 표기("(주)LG화학")를
+    쓰므로 이름으로는 매칭되지 않는다. 법인번호로 정확 조인한다.
+    실측: 385,256건 중 법인번호 보유 99.4%.
+
+    분기별 갱신이므로 적재는 전량 교체다 (scripts/load_applicant_corps.py).
+    """
+
+    __tablename__ = "applicant_corps"
+
+    applicant_code = Column(String, primary_key=True)   # 특허고객번호
+    applicant_name = Column(String, nullable=False, index=True)
+    applicant_name_eng = Column(String, nullable=True)
+    jurir_no = Column(String, nullable=True, index=True)  # 법인번호 13자리(숫자만)
+    bizr_no = Column(String, nullable=True, index=True)   # 사업자번호 10자리(숫자만)
+
+
+class Technology(Base):
+    """추적할 기술. 설명문에서 뽑은 키워드로 특허를 주기적으로 재검색한다."""
+
+    __tablename__ = "technologies"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(Text, nullable=False)
+    # LLM이 뽑은 검색어(JSON 배열). 사용자가 고칠 수 있어야 해서 저장해 둔다
+    keywords = Column(Text, nullable=False, default="[]")
+    max_companies = Column(Integer, nullable=False, default=5)   # 온보딩 상한(비용 통제)
+    is_active = Column(Boolean, default=True)
+    last_scanned_at = Column(DateTime, nullable=True)
+    # 기술 종합 보고서(마크다운). 기술당 최신 1건만 둔다 — 이력이 필요해지면 그때 테이블로 뺀다
+    report_md = Column(Text, nullable=True)
+    report_generated_at = Column(DateTime, nullable=True)
+    # 무엇을 근거로 쓴 보고서인지 — 특허 출원일 범위 + 사업보고서 연도.
+    # 본문에도 들어가지만 화면 머리말에서 바로 보이려면 따로 있어야 한다
+    report_basis = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    companies = relationship("TechCompany", back_populates="technology",
+                             cascade="all, delete-orphan")
+
+
+class TechCompany(Base):
+    """기술 ↔ 기업. 스캔 결과이자 변동 이력이다.
+
+    first_seen_at / last_seen_at으로 신규 진입과 이탈을 판별하므로
+    별도 스캔 이력 테이블을 두지 않는다.
+    """
+
+    __tablename__ = "tech_companies"
+    __table_args__ = (
+        UniqueConstraint("technology_id", "applicant_name", name="uq_tech_applicant"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    technology_id = Column(Integer, ForeignKey("technologies.id", ondelete="CASCADE"),
+                           nullable=False)
+    # 추적 중인 기업이면 채워진다. available/excluded는 비어 있다
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
+    corp_code = Column(String, nullable=True)
+    corp_name = Column(String, nullable=True)          # DART 표기
+    applicant_name = Column(String, nullable=False)    # 특허 표기 (DART와 다르다)
+    jurir_no = Column(String, nullable=True)
+    patent_count = Column(Integer, default=0)
+    keyword_hits = Column(Text, nullable=False, default="[]")   # 어느 키워드에서 나왔나
+    status = Column(String, nullable=False)            # tracked / available / excluded
+    exclude_reason = Column(String, nullable=True)
+    first_seen_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow)
+
+    technology = relationship("Technology", back_populates="companies")
+
+
+class DartCorp(Base):
+    """DART 전체 기업 색인 (corpCode.xml + 법인번호).
+
+    `Company`는 **우리가 추적하기로 한** 기업이고, 이쪽은 DART에 존재하는 전체 목록이다.
+    특허 출원인의 법인번호로 corp_code를 역인출하려면 이 색인이 필요하다 —
+    corpCode.xml에는 법인번호가 없어(corp_code·corp_name·stock_code·modify_date뿐)
+    기업마다 company.json을 한 번씩 불러 채워야 한다.
+
+    전체 11만여 개를 다 채우면 호출이 과하므로 **상장사부터** 채운다.
+    """
+
+    __tablename__ = "dart_corps"
+
+    corp_code = Column(String, primary_key=True)
+    corp_name = Column(String, nullable=False, index=True)
+    stock_code = Column(String, nullable=True, index=True)   # 있으면 상장사
+    jurir_no = Column(String, nullable=True, index=True)      # company.json으로 채운다
+    # 조회했으나 법인번호가 없던 경우를 구분해야 재시도를 반복하지 않는다
+    jurir_checked_at = Column(DateTime, nullable=True)
+
+
+class ApiCall(Base):
+    """외부 API 호출 1건. KIPRIS 무료 한도(월 1,000회)를 지키기 위한 계측.
+
+    실패 호출도 기록한다 — 한도 집계가 성공 여부와 무관할 수 있어 보수적으로 센다.
+    """
+
+    __tablename__ = "api_calls"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider = Column(String, nullable=False, index=True)   # kipris, dart, ...
+    operation = Column(String, nullable=False)
+    query = Column(String, nullable=True)
+    ok = Column(Boolean, nullable=False, default=True)
+    note = Column(String, nullable=True)
+    period = Column(String, nullable=False, index=True)     # YYYY-MM (한도 주기)
+    called_at = Column(DateTime, default=datetime.utcnow)
 
 
 class AppSetting(Base):

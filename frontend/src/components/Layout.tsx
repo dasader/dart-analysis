@@ -61,6 +61,9 @@ export default function Layout() {
                 </span>
               </div>
             )}
+            <Link to="/technologies" className="nav-link">
+              기술
+            </Link>
             <Link to="/settings/batches" className="nav-link">
               분석 현황
               {failureCount > 0 && (

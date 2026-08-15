@@ -84,3 +84,31 @@ def test_fails_when_result_too_short():
             + "II. 사업의 내용\n짧음\n")
     with pytest.raises(ExtractionFailed):
         extract(text)
+
+
+def test_cross_reference_is_not_a_heading():
+    """본문 안의 상호참조를 대제목으로 오인하면 앞 구역이 거기서 끊긴다.
+
+    실측: 알앤엘재생의학연구소 II(사업의 내용) 본문에
+    "III.재무에 관한 사항'을 참고하시기 바랍니다"가 있어 II가 740자로 잘렸고,
+    진짜 본문 70,434자가 통째로 버려져 추출이 실패했다.
+    """
+    text = build_report()
+    poisoned = text.replace(
+        "II. 사업의 내용\n",
+        "II. 사업의 내용\n자세한 내용은 'III. 재무에 관한 사항'을 참고하시기 바랍니다.\n",
+        1)
+
+    positions = {r: p for p, r in find_sections(poisoned)}
+    # 상호참조(II 본문 안)가 아니라 진짜 III 대제목이 잡혀야 한다
+    assert positions["III"] - positions["II"] > 50_000
+    assert len(extract(poisoned)) > 20_000
+
+
+def test_quoted_heading_both_sides_is_ignored():
+    """여는 따옴표만 있는 경우(‘II. 사업의 내용)도 상호참조로 본다."""
+    text = build_report()
+    poisoned = text.replace("I. 회사의 개요\n",
+                            "I. 회사의 개요\n앞서 ‘II. 사업의 내용 참조\n", 1)
+    positions = {r: p for p, r in find_sections(poisoned)}
+    assert positions["II"] - positions["I"] > 50_000

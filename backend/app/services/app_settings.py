@@ -15,6 +15,12 @@ TOGGLES: dict[str, tuple[str, str, bool]] = {
         "끄면 관리자가 직접 분석 버튼을 눌러야 합니다.",
         settings.scheduler_auto_analyze,
     ),
+    "tech_scan_enabled": (
+        "기술 자동 스캔",
+        "등록한 기술의 특허를 주기적으로 재검색해 새 기업을 찾습니다. "
+        "KIPRIS 무료 한도(월 1,000회)만 쓰고 분석 비용은 들지 않습니다.",
+        settings.tech_scan_enabled,
+    ),
     "section_extract_enabled": (
         "보고서 구역 추출",
         "분석에 필요한 구역만 추려 AI에 전달합니다(입력 약 87% 절감). "
