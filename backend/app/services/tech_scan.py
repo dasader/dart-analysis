@@ -79,7 +79,7 @@ def _merge(db: Session, tech: Technology, matched: dict, now: datetime) -> dict:
     return {"new": new_count, "kept": len(rows) - new_count, "dropped": dropped}
 
 
-async def scan(db: Session, tech: Technology, pages: int = 1, top: int = 30,
+async def scan(db: Session, tech: Technology, pages: int = 1, top: int | None = None,
                onboard: bool = False) -> dict:
     """기술 1건 스캔. onboard=True면 available 상위를 등록하고 분석까지 건다."""
     keywords = get_keywords(tech)

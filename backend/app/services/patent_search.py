@@ -129,7 +129,7 @@ def aggregate_applicants(results: list[dict]) -> tuple[Counter, dict[str, set[st
     return counter, keywords
 
 
-def match_companies(db: Session, applicants: Counter, limit: int = 30,
+def match_companies(db: Session, applicants: Counter, limit: int | None = None,
                     keywords: dict[str, set[str]] | None = None) -> dict:
     """출원인명 → 법인번호 → DART 기업.
 
@@ -140,6 +140,10 @@ def match_companies(db: Session, applicants: Counter, limit: int = 30,
       tracked   이미 추적 중인 기업 — 바로 분석 가능
       available DART에는 있으나 미등록 — **등록만 하면 분석 대상**
       excluded  법인번호가 없거나 DART에 없음 — 개인·대학·연구소·외국기업
+
+    `limit=None`이면 출원인 전체를 본다. 이 함수는 DB 조회만 하므로(외부 API를
+    부르지 않는다) 상한을 둘 이유가 없다 — 예전 기본값 30은 후보를 조용히 잘라
+    "전체 분석"을 골라도 31번째부터는 아예 보이지 않게 만들었다.
     """
     names = [n for n, _ in applicants.most_common(limit)]
     if not names:

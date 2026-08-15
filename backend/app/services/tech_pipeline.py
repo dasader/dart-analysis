@@ -92,9 +92,12 @@ async def onboard(db: Session, candidates: list[dict], max_companies: int,
     """미등록 후보를 등록하고 보고서를 확보한 뒤 분석 큐에 넣는다.
 
     candidates는 match_companies의 `available` 목록(특허 건수 내림차순).
-    max_companies로 반드시 상한을 둔다 — 비용이 기업 수만큼 곱해진다.
+
+    **비용이 기업 수만큼 곱해진다**(보고서 1건당 약 $0.0135). `max_companies`가
+    상한이고, **0이면 전체**다 — 후보를 다 태우겠다는 선택은 화면에서 예상 비용을
+    보여준 뒤 받는다.
     """
-    picked = candidates[:max_companies]
+    picked = candidates[:max_companies] if max_companies else candidates
     registered, with_report, queued_reports, failed = [], [], 0, []
 
     for cand in picked:
