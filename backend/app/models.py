@@ -140,6 +140,10 @@ class Technology(Base):
     description = Column(Text, nullable=False)
     # LLM이 뽑은 검색어(JSON 배열). 사용자가 고칠 수 있어야 해서 저장해 둔다
     keywords = Column(Text, nullable=False, default="[]")
+    # 마지막 스캔에서 키워드별 총건수(JSON). 넓은 키워드는 정밀도가 급락하므로
+    # (실측: 4,635건→100%, 24,045건→32%, 81,435건→9%) 사람이 보고 고칠 수 있어야 한다.
+    # 스캔 응답에만 실으면 화면을 닫는 순간 사라진다
+    keyword_stats = Column(Text, nullable=True)
     max_companies = Column(Integer, nullable=False, default=5)   # 온보딩 상한(비용 통제)
     is_active = Column(Boolean, default=True)
     last_scanned_at = Column(DateTime, nullable=True)

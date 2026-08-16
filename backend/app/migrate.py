@@ -19,6 +19,7 @@ ADDITIONS: list[tuple[str, str, str]] = [
     ("technologies", "report_md", "TEXT"),
     ("technologies", "report_generated_at", "DATETIME"),
     ("technologies", "report_basis", "VARCHAR"),
+    ("technologies", "keyword_stats", "TEXT"),
 ]
 
 

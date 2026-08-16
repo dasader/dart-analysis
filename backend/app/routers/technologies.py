@@ -27,11 +27,20 @@ def _counts(tech: Technology) -> dict:
     return c
 
 
+def _keyword_stats(tech: Technology) -> list[dict]:
+    try:
+        rows = json.loads(tech.keyword_stats or "[]")
+    except json.JSONDecodeError:
+        return []
+    return [r for r in rows if isinstance(r, dict) and "word" in r]
+
+
 def _to_response(tech: Technology) -> TechnologyResponse:
     c = _counts(tech)
     return TechnologyResponse(
         id=tech.id, name=tech.name, description=tech.description,
-        keywords=tech_scan.get_keywords(tech), max_companies=tech.max_companies,
+        keywords=tech_scan.get_keywords(tech), keyword_stats=_keyword_stats(tech),
+        max_companies=tech.max_companies,
         is_active=tech.is_active, last_scanned_at=tech.last_scanned_at,
         created_at=tech.created_at,
         tracked_count=c["tracked"], available_count=c["available"],
