@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import {
-  deleteTechnology, fetchTechnology, generateTechReport, scanTechnology, updateTechnology,
+  deleteTechnology, fetchTechnology, generateTechReport, scanTechnology, suggestKeywords,
+  updateTechnology,
 } from "../api/client";
 import { getErrorMessage } from "../lib/errors";
 import AdminButton from "../components/AdminButton";
@@ -101,6 +102,7 @@ export default function TechnologyDetailPage() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editKeywords, setEditKeywords] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
   const [editMax, setEditMax] = useState<number | null>(null);
   const [reporting, setReporting] = useState(false);
 
@@ -169,6 +171,20 @@ export default function TechnologyDetailPage() {
       await load();
     } catch (e) {
       setError(getErrorMessage(e));
+    }
+  };
+
+  // 뽑은 결과를 바로 저장하지 않고 입력창에 채운다 — 회차마다 달라지므로 사람이 보고 고른다
+  const handleSuggest = async () => {
+    setSuggesting(true);
+    setError(null);
+    try {
+      const { keywords } = await suggestKeywords(techId);
+      setEditKeywords(keywords.join(", "));
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setSuggesting(false);
     }
   };
 
@@ -252,13 +268,39 @@ export default function TechnologyDetailPage() {
           </AdminButton>
         </div>
         {editKeywords === null ? (
+          <>
           <div className="mt-2 flex flex-wrap gap-2">
-            {tech.keywords.map((k) => (
-              <span key={k} className="rounded-full bg-background px-2.5 py-1 text-xs text-text-secondary">
-                {k}
-              </span>
-            ))}
+            {tech.keywords.map((k) => {
+              // 마지막 스캔의 총건수. 넓으면 정밀도가 9%까지 떨어지기도 하지만
+              // 그 분야 정식 용어라면 넓어도 정확하다 — 판정이 아니라 확인 신호다
+              const stat = tech.keyword_stats.find((s) => s.word === k);
+              return (
+                <span
+                  key={k}
+                  title={stat?.broad ? "검색 결과가 2만 건을 넘습니다. 확인해 보세요" : undefined}
+                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${
+                    stat?.broad
+                      ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
+                      : "bg-background text-text-secondary"
+                  }`}
+                >
+                  {k}
+                  {stat && (
+                    <span className="tabular-nums opacity-70">
+                      {stat.total.toLocaleString()}건{stat.broad ? " ⚠" : ""}
+                    </span>
+                  )}
+                </span>
+              );
+            })}
           </div>
+          {tech.keyword_stats.some((s) => s.broad) && (
+            <p className="mt-2 text-xs text-amber-700">
+              ⚠ 결과가 2만 건을 넘습니다. 산업 전체를 가리키는 일반어면 더 구체적인 층위로
+              바꾸세요. 그 분야의 정식 용어라면 넓어도 정확합니다.
+            </p>
+          )}
+          </>
         ) : (
           <div className="mt-2">
             <input
@@ -266,12 +308,36 @@ export default function TechnologyDetailPage() {
               onChange={(e) => setEditKeywords(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm"
             />
-            <p className="mt-1 text-xs text-text-tertiary">
-              쉼표로 구분합니다. 4~30자가 적당하고, 산업 전체를 가리키는 일반어는 검색이 흩어집니다.
-            </p>
-            <button onClick={handleSaveKeywords} className="btn btn-primary btn-sm mt-2">
-              저장
-            </button>
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-text-tertiary">
+              <li>여러 개는 쉼표로 구분합니다</li>
+              <li>띄어쓰기는 AND입니다. 붙여 쓴 복합어도 형태소로 쪼개져 각각 AND로 걸립니다</li>
+              <li>
+                소재명·공정명·구조명처럼 구체적으로 씁니다 —
+                "치유·제어·융합" 같은 추상어는 엉뚱한 분야를 끌어옵니다
+              </li>
+              <li>
+                검색식도 그대로 씁니다: <code className="font-mono">A*B</code> 둘 다,{" "}
+                <code className="font-mono">A+B</code> 둘 중 하나,{" "}
+                <code className="font-mono">A!B</code> 제외,{" "}
+                <code className="font-mono">"A B"</code> 이 표현 그대로,{" "}
+                <code className="font-mono">( )</code> 묶기
+              </li>
+            </ul>
+            <div className="mt-2 flex items-center gap-2">
+              <button onClick={handleSaveKeywords} className="btn btn-primary btn-sm">
+                저장
+              </button>
+              <AdminButton
+                onClick={handleSuggest}
+                disabled={suggesting}
+                className="btn btn-outline btn-sm"
+              >
+                {suggesting ? "뽑는 중…" : "설명문으로 다시 뽑기"}
+              </AdminButton>
+              <span className="text-xs text-text-tertiary">
+                결과를 위 칸에 채웁니다. 확인 후 저장하세요
+              </span>
+            </div>
           </div>
         )}
 

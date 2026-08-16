@@ -119,6 +119,19 @@ def test_scan_refuses_without_keywords(db):
         asyncio.run(tech_scan.scan(db, t))
 
 
+def test_keyword_stats_survives_broken_json(db, tech):
+    """스캔 전이거나 값이 깨져 있어도 기술 화면이 열려야 한다."""
+    from app.routers.technologies import _keyword_stats
+
+    assert _keyword_stats(tech) == []                      # 스캔 전
+    tech.keyword_stats = "{이건 JSON이 아님"
+    assert _keyword_stats(tech) == []
+    tech.keyword_stats = json.dumps(
+        [{"word": "황화물계 고체전해질", "total": 4635, "broad": False}, "쓰레기"])
+    assert _keyword_stats(tech) == [
+        {"word": "황화물계 고체전해질", "total": 4635, "broad": False}]
+
+
 def test_get_keywords_survives_broken_json(db):
     t = Technology(name="깨진 기술", description="설명", keywords="{이건 JSON이 아님")
     assert tech_scan.get_keywords(t) == []

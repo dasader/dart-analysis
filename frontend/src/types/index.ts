@@ -131,11 +131,18 @@ export interface TechCompany {
   is_gone: boolean;
 }
 
+export interface KeywordStat {
+  word: string;
+  total: number;
+  broad: boolean;
+}
+
 export interface Technology {
   id: number;
   name: string;
   description: string;
   keywords: string[];
+  keyword_stats: KeywordStat[];
   max_companies: number;
   is_active: boolean;
   last_scanned_at: string | null;

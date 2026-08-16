@@ -170,11 +170,19 @@ class TechCompanyResponse(BaseModel):
     is_gone: bool         # 마지막 스캔에 나오지 않았다
 
 
+class KeywordStat(BaseModel):
+    """마지막 스캔에서 키워드 1건이 몇 건을 물어 왔는지. broad면 정밀도가 급락한다."""
+    word: str
+    total: int
+    broad: bool
+
+
 class TechnologyResponse(BaseModel):
     id: int
     name: str
     description: str
     keywords: list[str]
+    keyword_stats: list[KeywordStat] = []
     max_companies: int
     is_active: bool
     last_scanned_at: datetime | None

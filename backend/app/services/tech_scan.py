@@ -23,6 +23,13 @@ class ScanIncomplete(RuntimeError):
     """전체 검색이 완결되지 않아 저장하지 않았다."""
 
 
+# 키워드당 받아 올 페이지 수(100건/페이지). 1페이지는 기업을 통째로 놓친다 —
+# 실측: '황화물계 고체전해질' 상위 100건에 LG화학 0건, 101~300위에 15건.
+# 출원인도 27명 → 61명으로 늘었다. 대신 KIPRIS 월 1,000회를 2배로 쓴다
+# (키워드 4개 기준 기술 125건까지 월 1회 스캔 가능).
+PAGES = 2
+
+
 def get_keywords(tech: Technology) -> list[str]:
     try:
         return [k for k in json.loads(tech.keywords or "[]") if isinstance(k, str)]
@@ -79,7 +86,7 @@ def _merge(db: Session, tech: Technology, matched: dict, now: datetime) -> dict:
     return {"new": new_count, "kept": len(rows) - new_count, "dropped": dropped}
 
 
-async def scan(db: Session, tech: Technology, pages: int = 1, top: int | None = None,
+async def scan(db: Session, tech: Technology, pages: int = PAGES, top: int | None = None,
                onboard: bool = False) -> dict:
     """기술 1건 스캔. onboard=True면 available 상위를 등록하고 분석까지 건다."""
     keywords = get_keywords(tech)
@@ -90,9 +97,13 @@ async def scan(db: Session, tech: Technology, pages: int = 1, top: int | None = 
     applicants, kw_hits = patent_search.aggregate_applicants(results)
     matched = patent_search.match_companies(db, applicants, limit=top, keywords=kw_hits)
 
+    searched = [{"word": r["word"], "total": r["total"],
+                 "broad": r["total"] > patent_search.BROAD_THRESHOLD} for r in results]
+
     now = datetime.utcnow()
     stats = _merge(db, tech, matched, now)
     tech.last_scanned_at = now
+    tech.keyword_stats = json.dumps(searched, ensure_ascii=False)
     db.commit()
 
     onboarded = None
@@ -106,8 +117,7 @@ async def scan(db: Session, tech: Technology, pages: int = 1, top: int | None = 
     return {
         "technology_id": tech.id,
         "keywords": keywords,
-        "searched": [{"word": r["word"], "total": r["total"],
-                      "broad": r["total"] > patent_search.BROAD_THRESHOLD} for r in results],
+        "searched": searched,
         "applicants": len(applicants),
         "tracked": len(matched["tracked"]),
         "available": len(matched["available"]),

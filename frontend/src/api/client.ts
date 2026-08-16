@@ -178,6 +178,11 @@ export function scanTechnology(id: number, onboard = false): Promise<ScanResult>
   return request(`/technologies/${id}/scan?onboard=${onboard}`, { method: "POST" });
 }
 
+/** 설명문으로 검색어를 다시 뽑는다. 저장하지 않고 제안만 한다 — 화면이 확인 후 저장한다. */
+export function suggestKeywords(id: number): Promise<{ keywords: string[] }> {
+  return request(`/technologies/${id}/keywords/suggest`);
+}
+
 export function generateTechReport(
   id: number,
 ): Promise<{ report_md: string; report_generated_at: string }> {
