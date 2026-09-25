@@ -106,6 +106,53 @@ async def search(db: Session, word: str, pages: int = 1, rows: int = 100) -> dic
     return {"word": word, "total": total, "items": collected, "pages_fetched": fetched}
 
 
+# 핵심 IPC 판정 기준: 풀에서 가장 흔한 메인그룹 문서빈도의 이 비율 이상인 메인그룹.
+# 실측(6개 기술 × 45개 키워드 세트) 0.1~0.3에서 결과가 거의 같았다 — 적합 기업은 하나도
+# 잃지 않고 부적합 기업이 3.5→2.1~2.7곳. 0.4부터 적합 기업이 빠지기 시작한다
+IPC_CORE_FRAC = 0.2
+
+
+def _ipc_main_groups(ipc: str) -> set[str]:
+    """'H01M 10/0562|C01B 25/14' → {'H01M 10', 'C01B 25'}"""
+    return {p.split("/")[0].strip() for p in ipc.split("|") if p.strip()}
+
+
+def mark_ipc_core(results: list[dict], frac: float = IPC_CORE_FRAC) -> set[str]:
+    """한 기술의 검색 결과 전체에서 핵심 IPC 메인그룹을 잡고, 각 item에
+    `ipc_core`(bool)를 **제자리에서** 단다. 핵심 메인그룹 집합을 돌려준다.
+
+    코어는 키워드 **전체를 합친 풀**로 잡는다. 키워드 하나로 잡으면 엉뚱한 키워드는
+    자기 노이즈를 코어로 삼는다. 대부분의 키워드가 맞으면 풀의 다수가 그 기술의 IPC다.
+
+    표시만 하고 버리지 않는다 — 버릴지는 소비자가 정한다. 실측에서 이 표시로 걸러
+    집계하면 DART 매칭 기업 중 적합한 곳은 그대로(11.9곳)이고 부적합이 3.5→2.3곳으로
+    줄었다. 걸러지는 건 주로 특허 1~2건으로 끼어든 기업이다.
+    메인그룹 단위라 **같은 메인그룹 안의 노이즈는 못 가른다** — 식물 유전자 교정
+    (C12N 15/82)과 동물세포 교정(C12N 15/85)이 둘 다 `C12N 15`다. 대표 IPC(첫 번째)만
+    보면 더 가르지만 적합 특허를 12~36% 잃어 기업이 빠진다.
+    IPC가 비어 있는 특허는 판단 근거가 없으므로 True로 둔다.
+    """
+    df: Counter = Counter()
+    seen: set[str] = set()
+    for res in results:
+        for it in res["items"]:
+            key = it.get("app_no") or it.get("title")
+            if key in seen:
+                continue
+            seen.add(key)
+            df.update(_ipc_main_groups(it.get("ipc", "")))
+    if not df:
+        core: set[str] = set()
+    else:
+        top = df.most_common(1)[0][1]
+        core = {g for g, n in df.items() if n >= frac * top}
+    for res in results:
+        for it in res["items"]:
+            groups = _ipc_main_groups(it.get("ipc", ""))
+            it["ipc_core"] = not groups or bool(groups & core)
+    return core
+
+
 def aggregate_applicants(results: list[dict]) -> tuple[Counter, dict[str, set[str]]]:
     """여러 검색 결과에서 출원인별 (특허 건수, 등장한 키워드 집합)을 낸다.
 
