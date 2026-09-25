@@ -1,10 +1,10 @@
 import { useState } from "react";
 import Markdown from "./Markdown";
 
-/** 「참고 — 산업 밖 주체」 절의 시작. 백엔드 프롬프트가 이 제목을 쓰도록 지시한다.
- *  대학·연구소 목록은 참고자료라 기본으로 접어 둔다. 모델이 제목을 조금 다르게
- *  써도 잡히도록 느슨하게 맞춘다. */
-const APPENDIX = /^##\s*참고\s*[—\-–]?\s*산업\s*밖\s*주체.*$/m;
+/** 「참고 — 산업 밖 주체」 절의 시작. 백엔드(`tech_report.APPENDIX_TITLE`)가 코드로 붙인다.
+ *  대학·연구소 목록은 참고자료라 기본으로 접어 둔다. 예전 보고서는 모델이 썼고
+ *  "참고 — 참고 — 산업 밖 주체"처럼 흔들렸으므로 느슨하게 맞춘다. */
+const APPENDIX = /^##\s*참고.*산업\s*밖\s*주체.*$/m;
 
 export function splitAppendix(md: string): { body: string; appendix: string | null } {
   const m = md.match(APPENDIX);

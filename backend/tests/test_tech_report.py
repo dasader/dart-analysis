@@ -505,3 +505,75 @@ def test_promote_fills_company_id(db, tech):
     tc = db.query(TechCompany).filter(TechCompany.applicant_name == "다전자주식회사").one()
     assert tc.status == "tracked"
     assert tc.company_id == co.id
+
+
+def test_tech_terms_keeps_only_patent_vocabulary(db, tech):
+    """'배터리'는 기술명에 있지만 특허는 거의 안 쓰고 사업보고서엔 흔하다(삼성전자 청소기 배터리).
+    걸리면 전고체와 무관한 기업이 '직접 언급'을 얻는다."""
+    items = [patent("가", app_no=str(i), title="황화물계 고체전해질", abstract="전고체 전지")
+             for i in range(30)] + [patent("나", app_no="x", title="배터리 팩")]
+    terms = tech_report.tech_terms(tech, [{"items": items}])
+    assert "배터리" not in terms
+    assert "전고체" in terms and "고체전해질" in terms
+
+
+def test_gone_applicants_are_left_out(db, tech):
+    """키워드를 바꾸기 전에만 걸렸던 기업(이탈)이 보고서에 남으면 안 된다(실측: 전고체 보고서의 HLB제약)."""
+    now = datetime(2026, 9, 1)
+    tech.last_scanned_at = now
+    db.add_all([
+        TechCompany(technology_id=tech.id, applicant_name="현재", patent_count=3,
+                    status="excluded", keyword_hits="[]", last_seen_at=now),
+        TechCompany(technology_id=tech.id, applicant_name="이탈", patent_count=9,
+                    status="excluded", keyword_hits="[]", last_seen_at=datetime(2026, 8, 1)),
+    ])
+    db.commit()
+    db.refresh(tech)
+    table = tech_report._applicant_table(db, tech)
+    assert "현재" in table and "이탈" not in table
+
+
+def test_source_mentions_fold_duplicates(db, tech, monkeypatch):
+    """원문에 같은 문장이 두 번 실리면(임원 보수 사유 등) 칸만 먹는다 — 사업화 신호가 밀려난다."""
+    block = "x" * 150 + "반복 문장 전고체 사업. " + "x" * 150
+    body = block * 2 + "BMW와 전고체 배터리 실증 프로젝트 업무협약"
+    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: body)
+    hits = tech_report._mentions_in_source(Report(id=1, file_path="f"), ["전고체"])
+    assert len(hits) == 2
+    assert any("실증 프로젝트" in h for h in hits)
+
+
+def test_company_section_fixes_stage_in_table_skeleton(db, tech):
+    """행·링크·'언급 없음 → 관심·검토'는 코드가 정한다. 모델에 맡기면 행을 빠뜨렸다."""
+    co = Company(corp_code="00000021", corp_name="가완성차")
+    db.add(co)
+    db.commit()
+    r = Report(company_id=co.id, rcept_no="R21", report_name="사업보고서",
+               report_type="annual", fiscal_year=2025)
+    db.add(r)
+    db.commit()
+    db.add(Analysis(company_id=co.id, report_id=r.id, analysis_type="rnd",
+                    status=AnalysisStatus.COMPLETED, result_summary="수소 소재 개발"))
+    db.add(TechCompany(technology_id=tech.id, company_id=co.id, applicant_name="가완성차",
+                       corp_name="가완성차", patent_count=20, status="tracked",
+                       keyword_hits="[]"))
+    db.commit()
+    db.refresh(tech)
+
+    section, _ = tech_report._company_section(db, tech)
+    assert (f"| 가완성차 | 관심·검토 | 사업보고서에 언급 없음 | "
+            f"[2025년 사업보고서](/companies/{co.id}/reports/{r.id}) |") in section
+
+
+def test_appendix_is_written_by_code(db, tech):
+    """모델은 공개 건수를 합계−등록으로 계산해 틀렸고 제목을 두 번 썼다. 부록은 코드가 쓴다."""
+    db.add(TechCompany(technology_id=tech.id, applicant_name="가대학교", patent_count=30,
+                       status="excluded", keyword_hits="[]"))
+    db.commit()
+    db.refresh(tech)
+    tail = tech_report.appendix(tech, {"가대학교": {"total": 30, "registered": 9, "pending": 13}})
+    assert tail.startswith(tech_report.APPENDIX_TITLE)
+    assert "- 가대학교 — 30건 (등록 9 · 공개 13)" in tail
+
+    md = tech_report.finish("## 요약\n본문\n\n## 참고 — 참고 — 산업 밖 주체\n- 가대학교 (30건)", tail)
+    assert md.count("산업 밖 주체") == 1 and md.endswith("공개 13)")
