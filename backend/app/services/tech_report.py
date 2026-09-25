@@ -37,7 +37,7 @@ from app.services.report_service import extract_text_from_report
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-3.5-flash-lite"
+MODEL = "gemini-3.8-flash"   # MINIMAL 미지원 — LOW가 하한
 MAX_OUTPUT_TOKENS = 16384
 
 # 「기술 개요」를 쓸 초록 재료의 수. **기업 목록과는 무관하다** — 기업 발굴과
@@ -570,7 +570,7 @@ def _call(prompt: str) -> str:
             system_instruction=SYSTEM,
             max_output_tokens=MAX_OUTPUT_TOKENS,
             thinking_config=types.ThinkingConfig(
-                thinking_level=types.ThinkingLevel.MINIMAL),
+                thinking_level=types.ThinkingLevel.LOW),
         ),
     )
     return r.text or ""
