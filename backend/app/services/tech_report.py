@@ -615,7 +615,7 @@ async def generate(db: Session, tech: Technology) -> str:
     if not results:
         raise ValueError("특허 검색이 모두 실패해 보고서를 만들 수 없습니다.")
 
-    prompt, basis, tail = assemble(db, tech, results)
+    prompt, basis, tail = assemble(db, tech, patent_search.core_only(results))
     logger.info("기술 보고서 프롬프트 %d자 (기술=%s, 근거=%s)", len(prompt), tech.name, basis)
 
     loop = asyncio.get_running_loop()

@@ -93,7 +93,7 @@ async def scan(db: Session, tech: Technology, pages: int = PAGES, top: int | Non
     if not keywords:
         raise ScanIncomplete("검색 키워드가 없습니다. 기술을 먼저 저장하세요.")
 
-    results = await _search_all(db, keywords, pages)
+    results = patent_search.core_only(await _search_all(db, keywords, pages))
     applicants, kw_hits, patents = patent_search.aggregate_applicants(results)
     matched = patent_search.match_companies(db, applicants, limit=top, keywords=kw_hits,
                                             patents=patents)

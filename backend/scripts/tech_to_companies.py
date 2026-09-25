@@ -62,6 +62,7 @@ async def run(args) -> None:
             print("\n검색 결과가 없어 중단합니다.")
             return
 
+        results = patent_search.core_only(results)
         applicants, kw_hits, patents = patent_search.aggregate_applicants(results)
         m = patent_search.match_companies(db, applicants, limit=args.top, keywords=kw_hits,
                                           patents=patents)
