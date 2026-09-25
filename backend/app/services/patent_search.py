@@ -9,6 +9,7 @@
 import asyncio
 import logging
 from collections import Counter
+from datetime import datetime
 from functools import partial
 
 import httpx
@@ -33,6 +34,12 @@ GOOD_QUERY_LEN = (4, 30)
 # 실측: 좁은 것만 쓴 상위 10과 전부 쓴 상위 10이 9개 겹쳤다. 버릴 만큼 해롭지는 않으므로
 # 버리지 않고 **몇 개 키워드에서 나왔는지**를 함께 보여 구분하게 한다.
 BROAD_THRESHOLD = 20_000
+
+# 온보딩 순서는 **최근 N년 출원 건수**로 가른다(tech_report.MAX_PATENT_AGE_YEARS와 같은 기준).
+# 누적 건수로 세면 사업을 접은 기업이 옛 특허로 올라온다 — 실측(수소 연료전지):
+# 현대하이스코(2006~2013, 현대제철에 합병)·삼성SDI(2003~2011)·LG화학·삼성전자가
+# 상위 10에 들어 P@10이 6/10이었는데, 최근 10년 건수로 세자 9/10이 됐다.
+RECENT_YEARS = 10
 
 
 class PatentSearchError(RuntimeError):
@@ -106,17 +113,21 @@ async def search(db: Session, word: str, pages: int = 1, rows: int = 100) -> dic
     return {"word": word, "total": total, "items": collected, "pages_fetched": fetched}
 
 
-def aggregate_applicants(results: list[dict]) -> tuple[Counter, dict[str, set[str]]]:
-    """여러 검색 결과에서 출원인별 (특허 건수, 등장한 키워드 집합)을 낸다.
+def aggregate_applicants(results: list[dict]
+                         ) -> tuple[Counter, dict[str, set[str]], dict[str, list[dict]]]:
+    """여러 검색 결과에서 출원인별 (특허 건수, 등장한 키워드 집합, 특허 목록)을 낸다.
 
     같은 특허가 여러 키워드에 걸리면 중복 집계되므로 출원번호로 한 번 접는다.
 
     키워드 집합을 함께 주는 이유: 넓은 키워드 하나에서만 많이 나온 대기업과
     여러 키워드에 걸쳐 꾸준히 나온 기업은 성격이 다르다. 점수만으로는 안 갈린다.
+
+    특허 목록은 온보딩 순서를 정할 때 쓴다(최근 출원 건수, 제목 기반 적합도 판정).
     """
     seen: set[str] = set()
     counter: Counter = Counter()
     keywords: dict[str, set[str]] = {}
+    patents: dict[str, list[dict]] = {}
     for res in results:
         for item in res["items"]:
             if item["app_no"] and item["app_no"] in seen:
@@ -126,11 +137,19 @@ def aggregate_applicants(results: list[dict]) -> tuple[Counter, dict[str, set[st
             for name in item["applicants"]:
                 counter[name] += 1
                 keywords.setdefault(name, set()).add(res["word"])
-    return counter, keywords
+                patents.setdefault(name, []).append(item)
+    return counter, keywords, patents
+
+
+def count_recent(items: list[dict], this_year: int | None = None) -> int:
+    """최근 RECENT_YEARS년 안에 출원한 건수. 출원일을 모르는 것은 센다(거를 근거가 없다)."""
+    cutoff = f"{(this_year or datetime.utcnow().year) - RECENT_YEARS}0000"
+    return sum(1 for it in items if not it.get("app_date") or it["app_date"] >= cutoff)
 
 
 def match_companies(db: Session, applicants: Counter, limit: int | None = None,
-                    keywords: dict[str, set[str]] | None = None) -> dict:
+                    keywords: dict[str, set[str]] | None = None,
+                    patents: dict[str, list[dict]] | None = None) -> dict:
     """출원인명 → 법인번호 → DART 기업.
 
     이름으로 매칭하지 않는다 — 특허는 한글 표기("주식회사 엘지화학"), DART는 영문
@@ -166,7 +185,9 @@ def match_companies(db: Session, applicants: Counter, limit: int | None = None,
         cnt = applicants[name]
         jurir = by_name.get(name)
         base = {"applicant": name, "patents": cnt, "jurir_no": jurir,
-                "keywords": sorted(keywords.get(name, [])) if keywords else []}
+                "keywords": sorted(keywords.get(name, [])) if keywords else [],
+                # 특허 목록을 안 주면 누적 건수로 대신한다(예전 순서 그대로)
+                "recent": count_recent(patents.get(name, [])) if patents else cnt}
 
         if jurir and jurir in tracked_by_jurir:
             c = tracked_by_jurir[jurir]

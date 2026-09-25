@@ -62,8 +62,9 @@ async def run(args) -> None:
             print("\n검색 결과가 없어 중단합니다.")
             return
 
-        applicants, kw_hits = patent_search.aggregate_applicants(results)
-        m = patent_search.match_companies(db, applicants, limit=args.top, keywords=kw_hits)
+        applicants, kw_hits, patents = patent_search.aggregate_applicants(results)
+        m = patent_search.match_companies(db, applicants, limit=args.top, keywords=kw_hits,
+                                          patents=patents)
         n_broad = sum(1 for r in results if r["total"] > patent_search.BROAD_THRESHOLD)
         if n_broad:
             print(f"\n  ※ 넓은 키워드 {n_broad}개 포함. 아래 '키워드' 열이 1이면 "
@@ -98,9 +99,13 @@ async def run(args) -> None:
             return
 
         print(f"\n■ 온보딩 (상위 {args.max}개)")
-        out = await tech_pipeline.onboard(db, m["available"], args.max, args.year)
+        cands = await tech_pipeline.order_candidates(
+            (args.description or " ".join(keywords))[:40], args.description or ", ".join(keywords),
+            m["available"], patents, args.max)
+        out = await tech_pipeline.onboard(db, cands, args.max, args.year)
         for r in out["registered"]:
-            print(f"  등록: {r['corp_name']}")
+            why = f"  [{r['role']}] {r['reason'] or ''}" if r.get("role") else ""
+            print(f"  등록: {r['corp_name']}{why}")
         for r in out["reports"]:
             print(f"  보고서: {r['company']} {r['fiscal_year']}년 (id={r['report_id']})")
         for f in out["failed"]:

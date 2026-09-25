@@ -130,7 +130,8 @@ export default function TechnologyDetailPage() {
       if (!window.confirm(
         (cap === 0
           ? `등록 가능한 기업 ${candidates}개사를 모두 등록하고 사업보고서를 분석합니다.\n`
-          : `상위 ${cap}개 기업을 등록하고 사업보고서를 분석합니다(현재 후보 ${candidates}개).\n`) +
+          : `${cap}개 기업을 골라 등록하고 사업보고서를 분석합니다(현재 후보 ${candidates}개).\n` +
+            `특허 제목으로 관련성을 판정해 최근 10년 출원이 많은 순으로 고릅니다.\n`) +
         `보고서 1건당 약 $0.014 — 지금 기준 약 $${(n * 0.0135).toFixed(2)}가 발생합니다.\n` +
         `계속할까요?`,
       )) return;
@@ -403,6 +404,12 @@ export default function TechnologyDetailPage() {
               <Link to="/settings/batches" className="text-accent underline">
                 진행 상황
               </Link>
+              {scanResult.onboarded.registered.map((r) => (
+                <div key={r.corp_name}>
+                  {r.corp_name}
+                  {r.reason && <span className="ml-1 text-text-tertiary">— {r.reason}</span>}
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -94,8 +94,9 @@ async def scan(db: Session, tech: Technology, pages: int = PAGES, top: int | Non
         raise ScanIncomplete("검색 키워드가 없습니다. 기술을 먼저 저장하세요.")
 
     results = await _search_all(db, keywords, pages)
-    applicants, kw_hits = patent_search.aggregate_applicants(results)
-    matched = patent_search.match_companies(db, applicants, limit=top, keywords=kw_hits)
+    applicants, kw_hits, patents = patent_search.aggregate_applicants(results)
+    matched = patent_search.match_companies(db, applicants, limit=top, keywords=kw_hits,
+                                            patents=patents)
 
     searched = [{"word": r["word"], "total": r["total"],
                  "broad": r["total"] > patent_search.BROAD_THRESHOLD} for r in results]
@@ -108,7 +109,9 @@ async def scan(db: Session, tech: Technology, pages: int = PAGES, top: int | Non
 
     onboarded = None
     if onboard:
-        targets = _onboard_targets(db, matched)
+        targets = await tech_pipeline.order_candidates(
+            tech.name, tech.description, _onboard_targets(db, matched), patents,
+            tech.max_companies)
         if targets:
             onboarded = await tech_pipeline.onboard(db, targets, tech.max_companies)
             # 등록된 기업은 tracked로 승격된다 — 다음 스캔을 기다리지 않고 바로 반영
@@ -146,9 +149,11 @@ def _onboard_targets(db: Session, matched: dict) -> list[dict]:
 
     `onboard`는 앞에서부터 max_companies개를 자르므로 **순서가 곧 우선순위다.**
     그냥 이어붙이면 특허 3건짜리 미등록 기업이 16건짜리 기존 기업보다 먼저 간다.
+    순서 기준은 `tech_pipeline.rank`(최근 출원 건수 → 누적 건수)이고, 후보가 상한보다
+    많으면 `order_candidates`가 적합도 판정을 앞에 붙인다.
     """
-    targets = matched["available"] + _tracked_without_report(db, matched["tracked"])
-    return sorted(targets, key=lambda x: -x["patents"])
+    return tech_pipeline.rank(matched["available"]
+                              + _tracked_without_report(db, matched["tracked"]))
 
 
 def _promote(db: Session, tech: Technology, onboarded: dict) -> None:

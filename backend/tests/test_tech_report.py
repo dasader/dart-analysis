@@ -422,6 +422,71 @@ def test_onboard_targets_are_ordered_by_patent_count(db):
     assert [x["applicant"] for x in picked[:3]] == ["엘지에너지솔루션", "기아", "포스코홀딩스"]
 
 
+def test_onboard_order_prefers_recent_patents():
+    """누적 건수가 많아도 옛 특허뿐이면 뒤로 간다(실측: 연료전지에서 사업을 접은 기업들)."""
+    from app.services import tech_pipeline
+
+    cands = [{"applicant": "옛강자", "patents": 36, "recent": 0},
+             {"applicant": "현역", "patents": 7, "recent": 7}]
+    assert [x["applicant"] for x in tech_pipeline.rank(cands)] == ["현역", "옛강자"]
+
+
+def test_onboard_order_puts_unrelated_last_but_keeps_it():
+    """낱말만 겹친 기업(실측: 레독스 흐름전지 HLB제약)은 맨 뒤로 — 버리지는 않는다."""
+    from app.services import tech_pipeline
+
+    cands = [{"applicant": "흐름전지", "patents": 7, "recent": 7, "role": "unrelated"},
+             {"applicant": "장비", "patents": 5, "recent": 5, "role": "peripheral"},
+             {"applicant": "소재", "patents": 3, "recent": 3, "role": "core"}]
+    assert [x["applicant"] for x in tech_pipeline.rank(cands)] == ["소재", "장비", "흐름전지"]
+
+
+@pytest.mark.parametrize("cap", [0, 3])
+def test_fit_judge_skipped_when_everyone_fits(monkeypatch, cap):
+    """상한이 0(전체)이거나 후보가 상한 이하면 순서가 무의미하다 — LLM을 부르지 않는다."""
+    import asyncio
+
+    from app.services import tech_pipeline
+
+    def boom(*a):
+        raise AssertionError("호출되면 안 된다")
+    monkeypatch.setattr(tech_pipeline, "_judge_sync", boom)
+    cands = [{"applicant": f"기업{i}", "corp_name": f"기업{i}", "patents": i} for i in range(3)]
+    out = asyncio.run(tech_pipeline.order_candidates("기술", "설명", cands, {}, cap))
+    assert [x["applicant"] for x in out] == ["기업2", "기업1", "기업0"]
+
+
+def test_fit_judge_failure_falls_back_to_recent_order(monkeypatch):
+    """판정이 실패해도 온보딩을 막지 않는다."""
+    import asyncio
+
+    from app.services import tech_pipeline
+
+    def fail(*a):
+        raise RuntimeError("API 오류")
+    monkeypatch.setattr(tech_pipeline, "_judge_sync", fail)
+    cands = [{"applicant": "옛", "corp_name": "옛", "patents": 9, "recent": 0},
+             {"applicant": "새", "corp_name": "새", "patents": 2, "recent": 2}]
+    out = asyncio.run(tech_pipeline.order_candidates("기술", "설명", cands, {}, 1))
+    assert [x["applicant"] for x in out] == ["새", "옛"]
+
+
+def test_fit_judge_reorders_by_role(monkeypatch):
+    """판정은 corp_name으로 돌아온다 — 출원인명과 달라도 붙어야 한다."""
+    import asyncio
+
+    from app.services import tech_pipeline
+
+    monkeypatch.setattr(tech_pipeline, "_judge_sync", lambda *a: {
+        "HLB제약": {"corp": "HLB제약", "role": "unrelated", "reason": "흐름전지"},
+        "솔브레인": {"corp": "솔브레인", "role": "core", "reason": "고체전해질"}})
+    cands = [{"applicant": "에이치엘비제약", "corp_name": "HLB제약", "patents": 7, "recent": 7},
+             {"applicant": "솔브레인 주식회사", "corp_name": "솔브레인", "patents": 3, "recent": 3}]
+    out = asyncio.run(tech_pipeline.order_candidates("전고체", "설명", cands, {}, 1))
+    assert [x["corp_name"] for x in out] == ["솔브레인", "HLB제약"]
+    assert out[0]["reason"] == "고체전해질"
+
+
 def test_promote_fills_company_id(db, tech):
     """status만 tracked로 바꾸고 company_id를 빠뜨리면 겉보기엔 멀쩡한데
     기업 상세 링크도, 사업보고서 근거도 조용히 사라진다."""
