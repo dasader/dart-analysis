@@ -143,6 +143,7 @@ export interface Technology {
   description: string;
   keywords: string[];
   keyword_stats: KeywordStat[];
+  ipc_core: string[];
   max_companies: number;
   is_active: boolean;
   last_scanned_at: string | null;

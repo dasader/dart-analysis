@@ -135,3 +135,43 @@ def test_keyword_stats_survives_broken_json(db, tech):
 def test_get_keywords_survives_broken_json(db):
     t = Technology(name="깨진 기술", description="설명", keywords="{이건 JSON이 아님")
     assert tech_scan.get_keywords(t) == []
+
+
+def test_scan_learns_ipc_core_then_searches_inside_it(db, tech, monkeypatch):
+    """첫 스캔은 제한 없이 검색해 코어를 저장하고, 다음 스캔은 그 코어 안에서만 검색한다."""
+    import asyncio
+    from app.services import patent_search
+    calls = []
+
+    async def fake_search(db, word, pages=1, rows=100, ipc=None):
+        calls.append(ipc)
+        items = [{"app_no": f"10-{i}", "ipc": "H01M 10/0562", "applicants": ["가"],
+                  "title": "t", "app_date": "20240101", "status": "공개", "abstract": ""}
+                 for i in range(10)]
+        items.append({"app_no": "10-x", "ipc": "G06Q 50/08", "applicants": ["잡음"],
+                      "title": "t", "app_date": "20240101", "status": "공개", "abstract": ""})
+        return {"word": word, "total": len(items), "items": items, "pages_fetched": 1}
+
+    monkeypatch.setattr(patent_search, "search", fake_search)
+    asyncio.run(tech_scan.scan(db, tech))
+    assert calls == [None]
+    assert tech_scan.get_ipc_core(tech) == ["H01M 10"]
+    # 사후로 걸러져 잡음 출원인은 들어오지 않는다
+    assert {tc.applicant_name for tc in tech.companies} == {"가"}
+
+    asyncio.run(tech_scan.scan(db, tech))
+    assert calls[1] == ["H01M 10"]
+
+
+def test_keyword_edit_clears_ipc_core(db, tech):
+    """코어는 키워드가 정한다 — 키워드를 바꾸면 다음 스캔이 다시 잡는다. 같은 값이면 둔다."""
+    from app.routers.technologies import update_technology
+    from app.schemas import TechnologyUpdate
+    tech.ipc_core = json.dumps(["H01M 10"])
+    db.commit()
+
+    update_technology(tech.id, TechnologyUpdate(keywords=["황화물계 고체전해질"]), db)
+    assert tech_scan.get_ipc_core(tech) == ["H01M 10"]
+
+    update_technology(tech.id, TechnologyUpdate(keywords=["아지로다이트"]), db)
+    assert tech.ipc_core is None

@@ -183,6 +183,7 @@ class TechnologyResponse(BaseModel):
     description: str
     keywords: list[str]
     keyword_stats: list[KeywordStat] = []
+    ipc_core: list[str] = []
     max_companies: int
     is_active: bool
     last_scanned_at: datetime | None

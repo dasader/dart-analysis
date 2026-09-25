@@ -295,6 +295,13 @@ export default function TechnologyDetailPage() {
               );
             })}
           </div>
+          {/* 이 분류 안에서만 검색한다 — 위 건수도 제한된 건수다 */}
+          {tech.ipc_core.length > 0 && (
+            <p className="mt-2 text-xs text-text-secondary">
+              검색 분류(IPC): <span className="font-mono">{tech.ipc_core.join(" · ")}</span>
+              {" "}— 키워드를 바꾸면 다음 스캔에서 다시 잡습니다
+            </p>
+          )}
           {tech.keyword_stats.some((s) => s.broad) && (
             <p className="mt-2 text-xs text-amber-700">
               ⚠ 결과가 2만 건을 넘습니다. 산업 전체를 가리키는 일반어면 더 구체적인 층위로

@@ -76,11 +76,30 @@ def _parse(xml_text: str) -> tuple[str, int, list[dict]]:
     return code, int(total_raw or 0), items
 
 
-async def search(db: Session, word: str, pages: int = 1, rows: int = 100) -> dict:
-    """키워드 1건 검색. 반환: {total, items, pages_fetched}
+def with_ipc(word: str, ipc: list[str] | None) -> str:
+    """검색어에 IPC 제한을 붙인다: `키워드*(IPC=[H01M10]+IPC=[C01B25])`.
+
+    **`ipcNumber` 파라미터는 getWordSearch가 조용히 무시한다**(건수가 그대로다).
+    검색어 안에 태그로 넣어야 걸린다 — 실측 `리튬 이온 전도도` 82,407 → `H01M10` 37,390,
+    `+C01B25` 37,610. 메인그룹은 앞부분 일치로 걸린다(`H01M10`이 `H01M 10/0562`를 잡는다).
+    getAdvancedSearch는 `ipcNumber`를 받지만 그쪽 `word`는 복합어를 쪼개지 않아
+    (`황화물계 고체전해질` 4,635 → 13건) 대체재가 못 된다.
+    """
+    if not ipc:
+        return word
+    return f"{word}*(" + "+".join(f"IPC=[{g.replace(' ', '')}]" for g in ipc) + ")"
+
+
+async def search(db: Session, word: str, pages: int = 1, rows: int = 100,
+                 ipc: list[str] | None = None) -> dict:
+    """키워드 1건 검색. 반환: {word, total, items, pages_fetched}
+
+    `ipc`를 주면 그 IPC 메인그룹 안에서만 찾는다(`with_ipc`). 반환의 `word`는 제한을
+    붙이기 전의 키워드다 — 키워드 적중·화면 칩이 키워드 단위로 묶이기 때문이다.
 
     한도를 먼저 확인하고, 모자라면 호출하지 않고 QuotaExceeded를 던진다.
     """
+    query = with_ipc(word, ipc)
     if not settings.kipris_api_key:
         raise PatentSearchError("KIPRIS_API_KEY가 설정되지 않았습니다.")
     api_usage.check(db, PROVIDER, need=pages)
@@ -89,19 +108,19 @@ async def search(db: Session, word: str, pages: int = 1, rows: int = 100) -> dic
     total, collected, fetched = 0, [], 0
 
     for page in range(1, pages + 1):
-        params = {"word": word, "patent": "true", "utility": "true",
+        params = {"word": query, "patent": "true", "utility": "true",
                   "pageNo": page, "numOfRows": rows}
         try:
             text = await loop.run_in_executor(None, partial(_get, "getWordSearch", params))
             code, total, items = _parse(text)
         except Exception as e:
-            api_usage.record(db, PROVIDER, "getWordSearch", word, ok=False,
+            api_usage.record(db, PROVIDER, "getWordSearch", query, ok=False,
                              note=f"{type(e).__name__}: {e}")
             raise PatentSearchError(f"검색 실패: {e}") from e
 
         fetched += 1
         ok = code == "00"
-        api_usage.record(db, PROVIDER, "getWordSearch", word, ok=ok,
+        api_usage.record(db, PROVIDER, "getWordSearch", query, ok=ok,
                          note=None if ok else f"resultCode={code}")
         if not ok:
             raise PatentSearchError(f"KIPRIS 오류 resultCode={code} (word={word!r})")
@@ -160,11 +179,13 @@ def mark_ipc_core(results: list[dict], frac: float = IPC_CORE_FRAC) -> set[str]:
     return core
 
 
-def core_only(results: list[dict]) -> list[dict]:
-    """핵심 IPC 밖 특허를 뺀 결과 사본. 스캔과 종합 보고서가 **같은 기준으로** 세도록
-    둘 다 여기를 거친다. `total`(KIPRIS 총건수)은 그대로 둔다."""
-    mark_ipc_core(results)
-    return [{**r, "items": [it for it in r["items"] if it["ipc_core"]]} for r in results]
+def core_only(results: list[dict]) -> tuple[list[dict], set[str]]:
+    """핵심 IPC 밖 특허를 뺀 결과 사본과 핵심 메인그룹. `total`(KIPRIS 총건수)은 그대로 둔다.
+
+    IPC 제한 없이 검색한 결과에만 쓴다. 이미 `ipc`로 제한해 받은 결과에 다시 쓰면
+    제한된 풀에서 코어를 새로 잡아 저장된 코어의 작은 그룹을 떨군다."""
+    core = mark_ipc_core(results)
+    return [{**r, "items": [it for it in r["items"] if it["ipc_core"]]} for r in results], core
 
 
 def aggregate_applicants(results: list[dict]

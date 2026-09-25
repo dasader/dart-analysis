@@ -605,17 +605,14 @@ async def generate(db: Session, tech: Technology) -> str:
     if not keywords:
         raise ValueError("검색 키워드가 없습니다. 먼저 키워드를 설정하십시오.")
 
-    results = []
-    for word in keywords:
-        try:
-            results.append(await patent_search.search(db, word))
-        except Exception as e:
-            # 키워드 하나가 실패해도 나머지로 보고서는 쓸 수 있다. 다만 무엇이 빠졌는지는 남긴다
-            logger.warning("특허 검색 실패, 건너뜀: %r — %s", word, e)
-    if not results:
-        raise ValueError("특허 검색이 모두 실패해 보고서를 만들 수 없습니다.")
+    # 스캔과 같은 IPC 조건으로 검색한다 — 조건이 다르면 화면의 기업 목록과 보고서 표가 어긋난다.
+    # 코어가 없어도 여기서 저장하지 않는다(코어를 정하는 건 스캔이다)
+    try:
+        results, _ = await tech_scan.search_in_core(db, tech, keywords, pages=1)
+    except tech_scan.ScanIncomplete as e:
+        raise ValueError(f"특허 검색이 실패해 보고서를 만들 수 없습니다: {e}") from e
 
-    prompt, basis, tail = assemble(db, tech, patent_search.core_only(results))
+    prompt, basis, tail = assemble(db, tech, results)
     logger.info("기술 보고서 프롬프트 %d자 (기술=%s, 근거=%s)", len(prompt), tech.name, basis)
 
     loop = asyncio.get_running_loop()

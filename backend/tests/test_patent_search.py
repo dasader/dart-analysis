@@ -79,5 +79,14 @@ def test_core_only_drops_off_domain_but_keeps_total():
     from app.services.patent_search import core_only
     batt = [{"app_no": f"10-{i}", "ipc": "H01M 10/0562", "applicants": []} for i in range(10)]
     stray = {"app_no": "10-x", "ipc": "G06Q 50/08", "applicants": []}
-    out = core_only([{"word": "w", "total": 999, "items": batt + [stray]}])
+    out, core = core_only([{"word": "w", "total": 999, "items": batt + [stray]}])
+    assert core == {"H01M 10"}
     assert out[0]["total"] == 999 and stray not in out[0]["items"] and len(out[0]["items"]) == 10
+
+
+def test_with_ipc_puts_tag_in_query():
+    """getWordSearch는 ipcNumber 파라미터를 무시한다 — 검색어 안 태그로만 걸린다."""
+    from app.services.patent_search import with_ipc
+    assert with_ipc("황화물계 고체전해질", None) == "황화물계 고체전해질"
+    assert with_ipc("황화물계 고체전해질", ["C01B 25", "H01M 10"]) == \
+        "황화물계 고체전해질*(IPC=[C01B25]+IPC=[H01M10])"
