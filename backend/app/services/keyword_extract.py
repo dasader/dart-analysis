@@ -28,9 +28,13 @@ logger = logging.getLogger(__name__)
 # 넓은 키워드 문제도 같이 준다(`금속 분리판` 394,910건 → `연료전지 금속 분리판 내식성 코팅`
 # 1,222건). 실측 SW 분야에서 DART 매칭 기업이 9곳 → 15곳으로 늘었다.
 # 기술당 1회·입력 수백 자라 모델을 올려도 비용은 무시할 수준이다.
-MODEL = "gemini-3.7-flash"
-# 3.7-flash는 MINIMAL을 지원하지 않는다(에러를 낸다). LOW가 하한이다
-THINKING_LEVEL = types.ThinkingLevel.LOW
+# 3.8-flash MEDIUM으로 올렸다. 3.7-flash LOW와 단가가 같고, 6개 기술 × 2~3회 실측에서
+# 키워드 정밀도 76.9→79.4%, DART 부적합 기업 3.7→3.2곳(적합 11.7→11.2곳). 차이가 회차 간
+# 편차(±10%p) 안이라 "조금 나을 수 있다" 수준이지만 비용이 기술당 $0.003이라 택했다.
+# **3.8 LOW는 쓰지 마라** — thinking을 아예 안 쓰고 정밀도가 72.5%로 오히려 떨어졌다.
+# 3.8도 MINIMAL은 지원하지 않는다(400)
+MODEL = "gemini-3.8-flash"
+THINKING_LEVEL = types.ThinkingLevel.MEDIUM
 MIN_LEN, MAX_LEN = 4, 30
 
 # 뒤쪽 세 규칙(분야 고정어·한 대상·표준 표기)은 6개 기술 × 3회 실측에서 드러난 실패를
@@ -83,9 +87,9 @@ def _call(description: str) -> str:
         contents=f"기술 설명:\n{description}",
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM,
-            # thinking 토큰이 이 예산을 함께 쓴다 — 실측 최대 437이라 512로는 본문이
-            # 빈 채로 돌아올 수 있다
-            max_output_tokens=1024,
+            # thinking 토큰이 이 예산을 함께 쓴다 — 3.8 MEDIUM 실측 출력+thinking 평균 647이라
+            # 1,024로는 본문이 빈 채로 돌아올 수 있다
+            max_output_tokens=4096,
             thinking_config=types.ThinkingConfig(thinking_level=THINKING_LEVEL),
             response_mime_type="application/json",
             response_schema={

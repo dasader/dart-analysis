@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 # Gemini 입력 한도 (실측 1.49자/토큰 기준 — 1.4M자 ≈ 94만 토큰, 상한 1,048,576에 근접)
 MAX_CHARS = 1_400_000
+OUTPUT_TOKENS_PER_TYPE = 12_288
 
 
 def _truncate(text: str) -> str:
@@ -104,8 +105,9 @@ def build_prompts(
         f"위의 {len(types_to_run)}가지 분석을 모두 수행하고 JSON으로 반환해주세요.\n\n"
         f"---\n{_truncate(report_text).translate(_ASCII_QUOTE)}"
     )
-    # 출력 토큰: 분석 유형당 ~8192 × 유형 수
-    return system_prompt, user_prompt, 8192 * len(types_to_run)
+    # 출력 토큰: 분석 유형당 12,288 × 유형 수. 3.8-flash는 출력이 길다 — 실측 최대 20.9k
+    # (POSCO홀딩스)로 예전 상한 24,576(8,192×3)의 85%였다. 상한은 쓴 만큼만 과금된다
+    return system_prompt, user_prompt, OUTPUT_TOKENS_PER_TYPE * len(types_to_run)
 
 
 def save_result(db: Session, pending: list[Analysis], raw: str, model_name: str) -> None:

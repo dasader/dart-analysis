@@ -132,7 +132,7 @@ export default function TechnologyDetailPage() {
           ? `등록 가능한 기업 ${candidates}개사를 모두 등록하고 사업보고서를 분석합니다.\n`
           : `${cap}개 기업을 골라 등록하고 사업보고서를 분석합니다(현재 후보 ${candidates}개).\n` +
             `특허 제목으로 관련성을 판정해 최근 10년 출원이 많은 순으로 고릅니다.\n`) +
-        `보고서 1건당 약 $0.014 — 지금 기준 약 $${(n * 0.0135).toFixed(2)}가 발생합니다.\n` +
+        `보고서 1건당 약 $0.048 — 지금 기준 약 $${(n * 0.048).toFixed(2)}가 발생합니다.\n` +
         `계속할까요?`,
       )) return;
     }
@@ -342,7 +342,7 @@ export default function TechnologyDetailPage() {
           </div>
         )}
 
-        {/* 분석 상한 — 비용이 기업 수만큼 곱해지므로(1건당 약 $0.0135) 여기서 정한다 */}
+        {/* 분석 상한 — 비용이 기업 수만큼 곱해지므로(1건당 약 $0.048) 여기서 정한다 */}
         <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
           <div>
             <span className="text-sm font-medium text-text-primary">분석 상한</span>

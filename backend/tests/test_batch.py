@@ -22,7 +22,7 @@ def test_jsonl_line_uses_rest_schema():
     assert req["systemInstruction"]["parts"][0]["text"] == "시스템 지침"
     assert req["contents"][0]["parts"][0]["text"] == "보고서 본문"
     assert req["generationConfig"]["maxOutputTokens"] == 24576
-    assert req["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "MINIMAL"
+    assert req["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "LOW"
 
 
 def test_jsonl_line_pins_response_schema():
