@@ -10,6 +10,7 @@ import { getErrorMessage } from "../lib/errors";
 import AdminButton from "../components/AdminButton";
 import type { BatchJob, ExtractionFailure, QueueStatus } from "../types";
 import { usePolling } from "../hooks/usePolling";
+import { formatDateTime, parseServerTime } from "../lib/format";
 
 /** JOB_STATE_* → 한글 라벨 + 배지 색 */
 const STATE_LABEL: Record<string, { text: string; cls: string }> = {
@@ -23,7 +24,7 @@ const STATE_LABEL: Record<string, { text: string; cls: string }> = {
 
 function elapsed(from: string | null, to: string | null): string {
   if (!from) return "-";
-  const ms = new Date(to ?? Date.now()).getTime() - new Date(from).getTime();
+  const ms = (to ? parseServerTime(to).getTime() : Date.now()) - parseServerTime(from).getTime();
   const min = Math.floor(ms / 60000);
   if (min < 60) return `${min}분`;
   return `${Math.floor(min / 60)}시간 ${min % 60}분`;
@@ -31,9 +32,7 @@ function elapsed(from: string | null, to: string | null): string {
 
 function formatTime(iso: string | null): string {
   if (!iso) return "-";
-  return new Date(iso).toLocaleString("ko-KR", {
-    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
-  });
+  return formatDateTime(iso, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function BatchList() {
@@ -54,12 +53,16 @@ export default function BatchList() {
       .catch((e) => setError(getErrorMessage(e)))
       .finally(() => setLoading(false));
 
-  // 15초마다 갱신한다(batch turnaround는 분 단위). 한가할 때도 도는 건 다른 곳에서
-  // 새로 제출한 작업이 이 화면에 저절로 나타나게 하기 위해서다
   useEffect(() => {
     load();
   }, []);
-  usePolling(load, 15000);
+  // 진행 중인 작업(제출 대기·처리 중)이 있으면 15초, 한가하면 60초마다 갱신한다(batch는 분 단위).
+  // 한가할 때도 멈추지 않는 건 스케줄러·다른 화면이 새로 제출한 작업이 여기 저절로 나타나게 하기 위해서다
+  const active =
+    jobs.some((j) => !j.is_terminal) ||
+    (queue?.pending_count ?? 0) > 0 ||
+    (queue?.running_batches ?? 0) > 0;
+  usePolling(load, active ? 15000 : 60000);
 
   const handleCancel = async (job: BatchJob) => {
     if (!window.confirm(`이 작업을 취소할까요? (보고서 ${job.report_ids.length}건)`)) return;

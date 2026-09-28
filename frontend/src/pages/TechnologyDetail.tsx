@@ -9,6 +9,7 @@ import AdminButton from "../components/AdminButton";
 import TechReport from "../components/TechReport";
 import { TECH_STATUSES } from "../types";
 import type { ScanResult, TechCompany, TechStatus, TechnologyDetail as TechDetail } from "../types";
+import { formatDateTime } from "../lib/format";
 
 // 보고서 1건 분석비(3.8-flash batch). 백엔드 gemini_batch 주석·CLAUDE.md와 같은 값
 const COST_PER_REPORT = 0.048;
@@ -433,7 +434,7 @@ export default function TechnologyDetailPage() {
                   </p>
                 )}
                 <p className="mt-0.5 text-xs text-text-tertiary">
-                  생성: {new Date(tech.report_generated_at).toLocaleString("ko-KR")}
+                  생성: {formatDateTime(tech.report_generated_at)}
                 </p>
               </>
             ) : (

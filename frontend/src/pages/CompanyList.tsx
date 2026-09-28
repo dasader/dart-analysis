@@ -9,6 +9,7 @@ import { useSort } from "../hooks/useSort";
 import SortIcon from "../components/SortIcon";
 import { getErrorMessage } from "../lib/errors";
 import type { Company, Tag } from "../types";
+import { formatDate } from "../lib/format";
 
 type SortKey = "corp_name" | "corp_code" | "report_count" | "latest_analysis_date";
 
@@ -240,7 +241,7 @@ export default function CompanyList() {
                   </td>
                   <td className="px-6 py-4 text-text-secondary">
                     {c.latest_analysis_date
-                      ? new Date(c.latest_analysis_date).toLocaleDateString("ko-KR")
+                      ? formatDate(c.latest_analysis_date)
                       : "—"}
                   </td>
                   <td className="px-6 py-4 text-center">{getStatusBadge(c)}</td>

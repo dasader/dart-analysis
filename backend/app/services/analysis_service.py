@@ -115,7 +115,7 @@ def build_prompts(
 
 {{{keys_desc}: "마크다운 텍스트"}}"""
 
-    # user_prompt_template들은 보고서 부분이 동일 → 보고서는 한 번만 첨부하고 분석 지시만 결합
+    # 보고서는 한 번만 첨부하고 분석 지시(system_prompt)만 유형별로 결합한다
     user_prompt = (
         f"아래는 {report.company.corp_name}의 {report.fiscal_year}년 사업보고서 전문입니다.\n"
         f"위의 {len(types_to_run)}가지 분석을 모두 수행하고 JSON으로 반환해주세요.\n\n"

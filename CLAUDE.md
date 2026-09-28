@@ -123,7 +123,7 @@ services/
 3. 보고서별로 JSONL 1줄 생성(3종 분석을 1요청으로 통합) → 업로드 → `batches.create`
 4. `BatchJob` 저장, 담당 `Analysis`들 running 전환
 5. 스케줄러가 60초마다 `poll_batches()` — 완료 시 결과 JSONL을 `key`(=report_id)로 분배
-6. 프론트엔드는 5초 폴링으로 상태 감지, `/settings/batches`에서 작업 현황 확인
+6. 프론트엔드는 진행 중일 때 10초 폴링으로 상태 감지(`hooks/usePolling`, 숨은 탭은 건너뜀), `/settings/batches`에서 작업 현황 확인
 
 **중요**:
 - 큐는 실행 대기열이 아니라 **묶는 버퍼**다. 진행 상태의 원본은 DB(`BatchJob`)이므로
@@ -184,8 +184,9 @@ pages/
   CompanyList.tsx    기업 목록 CRUD, 컬럼별 정렬 (기업명·코드·보고서수·분석일)
   CompanyDetail.tsx  기업 상세 — 사업보고서 목록. 진행 중이면 10초 폴링(보고서+분석 동시)
   ReportDetail.tsx   /companies/:id/reports/:reportId — 분석 3종 탭·재분석·PDF 출력
-  PromptSettings.tsx 동작 설정 토글 + 프롬프트 템플릿 편집
-  BatchList.tsx      /settings/batches — batch 작업 현황·취소 (15초 폴링)
+  PromptSettings.tsx 동작 설정 토글 + 분석 유형별 시스템 프롬프트 편집(유저 프롬프트 템플릿은 분석에 쓰이지 않아 제거)
+  BatchList.tsx      /settings/batches — batch 작업 현황·취소 (진행 중 15초·한가 60초 폴링 — 한가해도 멈추지 않는 건
+                     스케줄러가 새로 제출한 작업이 저절로 나타나게 하기 위해서다)
   SettingToggles.tsx 동작 설정 토글 — 끄면 비용이 느는 항목은 확인 후 변경
 components/
   ReportTable.tsx      정렬·분석·재다운로드·삭제. 보고서명 클릭 시 보고서 상세로 이동.
@@ -198,6 +199,12 @@ components/
 ```
 
 **CSS**: Tailwind v4 (`@import "tailwindcss"` + `@plugin "@tailwindcss/typography"`), `@theme` 블록에 커스텀 색상 변수 정의. 폰트: Pretendard(한글) + DM Sans(영문) + JetBrains Mono — mono 폰트 스택에 Pretendard 포함하여 한글 fallback 처리.
+
+**시각은 KST로 표시한다**(`lib/format.ts`). 백엔드는 `datetime.utcnow()`로 저장해 오프셋 없이
+보낸다(`2026-09-28T05:27:14`). 브라우저는 이런 문자열을 **로컬 시각**으로 읽어 한국에서 9시간 이르게
+보였고(배치 경과 시간도 9시간 부풀었다), 해외 브라우저에서는 날짜가 하루 어긋났다. `parseServerTime`이
+UTC로 못박고 `Asia/Seoul`로 포맷한다. 날짜만 있는 값(`2025-03-11`)에는 `Z`를 붙이지 않는다(잘못된 날짜가 된다).
+서버 시각을 `new Date()`로 직접 읽지 마라.
 
 **인쇄**: 보고서 상세에서 `window.print()` 호출 시 화면 UI는 `no-print`로 숨기고,
 `print-only` 클래스의 통합 보고서(그 보고서의 분석 3종)만 출력. 표 깨짐 방지를 위해 `index.css`에 전용 `@media print` 스타일 정의.

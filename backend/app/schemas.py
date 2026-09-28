@@ -233,11 +233,9 @@ class PromptTemplateResponse(BaseModel):
     analysis_type: str
     label: str
     system_prompt: str
-    user_prompt_template: str
     updated_at: datetime
 
     model_config = {"from_attributes": True}
 
 class PromptTemplateUpdate(BaseModel):
     system_prompt: str
-    user_prompt_template: str

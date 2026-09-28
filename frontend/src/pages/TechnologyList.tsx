@@ -5,12 +5,11 @@ import { getErrorMessage } from "../lib/errors";
 import AdminButton from "../components/AdminButton";
 import { useAdmin } from "../context/AdminContext";
 import type { Technology } from "../types";
+import { formatDate } from "../lib/format";
 
-function formatDate(iso: string | null): string {
+function formatScanDate(iso: string | null): string {
   if (!iso) return "미실행";
-  return new Date(iso).toLocaleDateString("ko-KR", {
-    year: "2-digit", month: "2-digit", day: "2-digit",
-  });
+  return formatDate(iso, { year: "2-digit", month: "2-digit", day: "2-digit" });
 }
 
 export default function TechnologyList() {
@@ -146,7 +145,7 @@ export default function TechnologyList() {
                   <td className="px-5 py-3.5 text-center text-warning">{t.available_count}</td>
                   <td className="px-5 py-3.5 text-center text-text-tertiary">{t.excluded_count}</td>
                   <td className="px-5 py-3.5 text-text-secondary">
-                    {formatDate(t.last_scanned_at)}
+                    {formatScanDate(t.last_scanned_at)}
                   </td>
                 </tr>
               ))}

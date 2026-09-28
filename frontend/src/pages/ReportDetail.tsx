@@ -20,6 +20,7 @@ import remarkGfm from "remark-gfm";
 import { analysesEqual, isInProgress } from "../lib/status";
 import { usePolling } from "../hooks/usePolling";
 import type { Analysis, AnalysisStatus, AnalysisType, Company, Report } from "../types";
+import { formatDate } from "../lib/format";
 
 const STATUS_BADGE: Record<AnalysisStatus, { text: string; cls: string }> = {
   pending: { text: "대기", cls: "bg-gray-100 text-text-tertiary" },
@@ -49,7 +50,7 @@ const PrintReport = memo(function PrintReport({
         </p>
         <p className="print-meta">
           분석일:{" "}
-          {new Date(analyses[0].updated_at).toLocaleDateString("ko-KR")}
+          {formatDate(analyses[0].updated_at)}
         </p>
       </div>
 

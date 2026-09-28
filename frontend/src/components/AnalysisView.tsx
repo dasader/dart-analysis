@@ -2,6 +2,7 @@ import AdminButton from "./AdminButton";
 import Markdown from "./Markdown";
 import type { Analysis } from "../types";
 import { isInProgress } from "../lib/status";
+import { formatDate } from "../lib/format";
 
 interface Props {
   /** 이 보고서·이 유형의 분석. 아직 요청된 적 없으면 undefined */
@@ -17,7 +18,7 @@ export default function AnalysisView({ analysis, onRun, running }: Props) {
       <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
         <div className="mb-4 flex items-center gap-3 border-b border-border pb-4">
           <span className="text-xs text-text-tertiary">
-            분석일: {new Date(analysis.updated_at).toLocaleDateString("ko-KR")}
+            분석일: {formatDate(analysis.updated_at)}
           </span>
           {analysis.model_name && (
             <span className="font-mono text-xs text-text-tertiary">

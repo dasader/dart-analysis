@@ -198,7 +198,6 @@ export interface PromptTemplate {
   analysis_type: string;
   label: string;
   system_prompt: string;
-  user_prompt_template: string;
   updated_at: string;
 }
 
@@ -228,5 +227,4 @@ export interface TagUpdate {
 
 export interface PromptUpdate {
   system_prompt: string;
-  user_prompt_template: string;
 }
