@@ -46,6 +46,11 @@ MAX_PATENTS = 80
 ABSTRACT_CHARS = 500
 MAX_ANALYSIS_CHARS = 3000
 
+# rnd는 앞 N자 대신 이 절들을 제목으로 잘라 싣는다. 「기술 사업화 동향」이 사업화 단계
+# 판정의 핵심 근거인데 3.8-flash에서 길어져(POSCO홀딩스 52행·3,971자) 앞 3,000자에서 잘렸다.
+# 상한은 실측 최대의 여유분 — 요약 최대 243자, 사업화 동향 최대 3,971자(3.8 LOW, 7개사)
+RND_SECTIONS = {"요약": 600, "기술 사업화 동향": 5000}
+
 # 이보다 오래된 특허는 초록 재료에서 뺀다.
 # 상한을 늘리면 뒤쪽(관련도가 낮고 오래된 것)이 딸려 들어오는데, 10년도 더 된 특허의
 # 조성·공정을 현재 기술 개요에 섞으면 지금 무엇이 쟁점인지가 흐려진다.
@@ -278,6 +283,28 @@ def _mentions_in_source(report: Report, terms: list[str], limit: int = 5) -> lis
     return out
 
 
+def _section(md: str, title: str, cap: int) -> str | None:
+    """`## title`부터 다음 `## ` 제목 전까지. 상한을 넘으면 줄 단위로 자른다(표 행이 반쪽 나지 않게)."""
+    m = re.search(rf"^## {re.escape(title)}[^\n]*\n", md, re.M)
+    if not m:
+        return None
+    nxt = re.search(r"^## ", md[m.end():], re.M)
+    sec = md[m.start(): (m.end() + nxt.start()) if nxt else len(md)].rstrip()
+    if len(sec) > cap:
+        sec = sec[:cap].rsplit("\n", 1)[0] + "\n…(이하 생략)"
+    return sec
+
+
+def _analysis_excerpt(a: Analysis) -> str:
+    """분석 결과 중 프롬프트에 실을 부분. rnd는 RND_SECTIONS 절, 나머지와 절이 없는 옛 결과는 앞 N자."""
+    md = a.result_summary or ""
+    if a.analysis_type == "rnd":
+        secs = {t: _section(md, t, cap) for t, cap in RND_SECTIONS.items()}
+        if secs["기술 사업화 동향"]:
+            return "\n\n".join(s for s in secs.values() if s)
+    return md[:MAX_ANALYSIS_CHARS]
+
+
 def _live(tech: Technology) -> list:
     """마지막 스캔에 나온 출원인만. 이탈 기업은 지우지 않고 `last_seen_at`으로 드러내므로
     (tech_scan._merge) 거르지 않으면 키워드를 바꾸기 전의 기업이 보고서에 남는다
@@ -352,7 +379,7 @@ def _company_section(db: Session, tech: Technology,
         for a, r in rows:
             if r.fiscal_year != latest_year:
                 continue
-            parts.append(f"\n**{a.analysis_type}**\n{(a.result_summary or '')[:MAX_ANALYSIS_CHARS]}")
+            parts.append(f"\n**{a.analysis_type}**\n{_analysis_excerpt(a)}")
         blocks.append("\n".join(parts))
 
     if not blocks:
