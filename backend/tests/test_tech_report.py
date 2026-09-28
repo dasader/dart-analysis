@@ -577,3 +577,39 @@ def test_appendix_is_written_by_code(db, tech):
 
     md = tech_report.finish("## 요약\n본문\n\n## 참고 — 참고 — 산업 밖 주체\n- 가대학교 (30건)", tail)
     assert md.count("산업 밖 주체") == 1 and md.endswith("공개 13)")
+
+
+RND_MD = ("## 요약\nR&D 요약\n\n## 기술 사업화 동향\n| 유형 | 내용 |\n|---|---|\n"
+          "| 지분투자 | 프롤로지움 지분 투자 |\n\n## 연구개발비 추이\n" + "비용 " * 2000)
+
+
+def test_rnd_excerpt_takes_sections_by_heading():
+    """사업화 동향은 앞 N자가 아니라 제목으로 잘라 싣는다 — 3.8에서 길어져 3,000자에서 잘렸다."""
+    padded = RND_MD.replace("R&D 요약", "R&D 요약\n" + "가" * 3500)  # 앞 N자로는 사업화 동향이 안 실린다
+    assert "프롤로지움" not in padded[:tech_report.MAX_ANALYSIS_CHARS]
+    out = tech_report._analysis_excerpt(Analysis(analysis_type="rnd", result_summary=padded))
+    assert "프롤로지움 지분 투자" in out
+    assert out.startswith("## 요약")
+    assert "연구개발비 추이" not in out and "비용" not in out
+
+
+def test_rnd_excerpt_falls_back_without_section():
+    """절이 없는 옛 결과와 national_tech는 지금처럼 앞 N자."""
+    old = "## 요약\n옛 결과\n" + "나" * 5000
+    for typ in ("rnd", "national_tech"):
+        out = tech_report._analysis_excerpt(Analysis(analysis_type=typ, result_summary=old))
+        assert out == old[:tech_report.MAX_ANALYSIS_CHARS]
+    nt = tech_report._analysis_excerpt(Analysis(analysis_type="national_tech", result_summary=RND_MD))
+    assert nt == RND_MD[:tech_report.MAX_ANALYSIS_CHARS]
+
+
+def test_rnd_excerpt_caps_section_on_line_boundary():
+    """절이 폭주해도 상한에서 줄 단위로 자른다 — 표 행이 반쪽 나지 않게."""
+    rows = "".join(f"| MOU | 협약 {i:04d} |\n" for i in range(2000))
+    md = f"## 요약\n요약\n\n## 기술 사업화 동향\n{rows}\n## 시사점\n끝"
+    out = tech_report._analysis_excerpt(Analysis(analysis_type="rnd", result_summary=md))
+    sec = out[out.index("## 기술 사업화 동향"):]
+    assert len(sec) <= tech_report.RND_SECTIONS["기술 사업화 동향"] + len("\n…(이하 생략)")
+    assert sec.endswith("…(이하 생략)")
+    assert all(line.endswith("|") for line in sec.splitlines()[1:-1])
+    assert "시사점" not in out
