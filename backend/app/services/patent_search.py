@@ -9,6 +9,7 @@
 import asyncio
 import logging
 from collections import Counter
+from datetime import datetime
 from functools import partial
 
 import httpx
@@ -33,6 +34,12 @@ GOOD_QUERY_LEN = (4, 30)
 # 실측: 좁은 것만 쓴 상위 10과 전부 쓴 상위 10이 9개 겹쳤다. 버릴 만큼 해롭지는 않으므로
 # 버리지 않고 **몇 개 키워드에서 나왔는지**를 함께 보여 구분하게 한다.
 BROAD_THRESHOLD = 20_000
+
+# 온보딩 순서는 **최근 N년 출원 건수**로 가른다(tech_report.MAX_PATENT_AGE_YEARS와 같은 기준).
+# 누적 건수로 세면 사업을 접은 기업이 옛 특허로 올라온다 — 실측(수소 연료전지):
+# 현대하이스코(2006~2013, 현대제철에 합병)·삼성SDI(2003~2011)·LG화학·삼성전자가
+# 상위 10에 들어 P@10이 6/10이었는데, 최근 10년 건수로 세자 9/10이 됐다.
+RECENT_YEARS = 10
 
 
 class PatentSearchError(RuntimeError):
@@ -69,11 +76,30 @@ def _parse(xml_text: str) -> tuple[str, int, list[dict]]:
     return code, int(total_raw or 0), items
 
 
-async def search(db: Session, word: str, pages: int = 1, rows: int = 100) -> dict:
-    """키워드 1건 검색. 반환: {total, items, pages_fetched}
+def with_ipc(word: str, ipc: list[str] | None) -> str:
+    """검색어에 IPC 제한을 붙인다: `키워드*(IPC=[H01M10]+IPC=[C01B25])`.
+
+    **`ipcNumber` 파라미터는 getWordSearch가 조용히 무시한다**(건수가 그대로다).
+    검색어 안에 태그로 넣어야 걸린다 — 실측 `리튬 이온 전도도` 82,407 → `H01M10` 37,390,
+    `+C01B25` 37,610. 메인그룹은 앞부분 일치로 걸린다(`H01M10`이 `H01M 10/0562`를 잡는다).
+    getAdvancedSearch는 `ipcNumber`를 받지만 그쪽 `word`는 복합어를 쪼개지 않아
+    (`황화물계 고체전해질` 4,635 → 13건) 대체재가 못 된다.
+    """
+    if not ipc:
+        return word
+    return f"{word}*(" + "+".join(f"IPC=[{g.replace(' ', '')}]" for g in ipc) + ")"
+
+
+async def search(db: Session, word: str, pages: int = 1, rows: int = 100,
+                 ipc: list[str] | None = None) -> dict:
+    """키워드 1건 검색. 반환: {word, total, items, pages_fetched}
+
+    `ipc`를 주면 그 IPC 메인그룹 안에서만 찾는다(`with_ipc`). 반환의 `word`는 제한을
+    붙이기 전의 키워드다 — 키워드 적중·화면 칩이 키워드 단위로 묶이기 때문이다.
 
     한도를 먼저 확인하고, 모자라면 호출하지 않고 QuotaExceeded를 던진다.
     """
+    query = with_ipc(word, ipc)
     if not settings.kipris_api_key:
         raise PatentSearchError("KIPRIS_API_KEY가 설정되지 않았습니다.")
     api_usage.check(db, PROVIDER, need=pages)
@@ -82,19 +108,19 @@ async def search(db: Session, word: str, pages: int = 1, rows: int = 100) -> dic
     total, collected, fetched = 0, [], 0
 
     for page in range(1, pages + 1):
-        params = {"word": word, "patent": "true", "utility": "true",
+        params = {"word": query, "patent": "true", "utility": "true",
                   "pageNo": page, "numOfRows": rows}
         try:
             text = await loop.run_in_executor(None, partial(_get, "getWordSearch", params))
             code, total, items = _parse(text)
         except Exception as e:
-            api_usage.record(db, PROVIDER, "getWordSearch", word, ok=False,
+            api_usage.record(db, PROVIDER, "getWordSearch", query, ok=False,
                              note=f"{type(e).__name__}: {e}")
             raise PatentSearchError(f"검색 실패: {e}") from e
 
         fetched += 1
         ok = code == "00"
-        api_usage.record(db, PROVIDER, "getWordSearch", word, ok=ok,
+        api_usage.record(db, PROVIDER, "getWordSearch", query, ok=ok,
                          note=None if ok else f"resultCode={code}")
         if not ok:
             raise PatentSearchError(f"KIPRIS 오류 resultCode={code} (word={word!r})")
@@ -106,17 +132,77 @@ async def search(db: Session, word: str, pages: int = 1, rows: int = 100) -> dic
     return {"word": word, "total": total, "items": collected, "pages_fetched": fetched}
 
 
-def aggregate_applicants(results: list[dict]) -> tuple[Counter, dict[str, set[str]]]:
-    """여러 검색 결과에서 출원인별 (특허 건수, 등장한 키워드 집합)을 낸다.
+# 핵심 IPC 판정 기준: 풀에서 가장 흔한 메인그룹 문서빈도의 이 비율 이상인 메인그룹.
+# 실측(6개 기술 × 45개 키워드 세트) 0.1~0.3에서 결과가 거의 같았다 — 적합 기업은 하나도
+# 잃지 않고 부적합 기업이 3.5→2.1~2.7곳. 0.4부터 적합 기업이 빠지기 시작한다
+IPC_CORE_FRAC = 0.2
+
+
+def _ipc_main_groups(ipc: str) -> set[str]:
+    """'H01M 10/0562|C01B 25/14' → {'H01M 10', 'C01B 25'}"""
+    return {p.split("/")[0].strip() for p in ipc.split("|") if p.strip()}
+
+
+def mark_ipc_core(results: list[dict], frac: float = IPC_CORE_FRAC) -> set[str]:
+    """한 기술의 검색 결과 전체에서 핵심 IPC 메인그룹을 잡고, 각 item에
+    `ipc_core`(bool)를 **제자리에서** 단다. 핵심 메인그룹 집합을 돌려준다.
+
+    코어는 키워드 **전체를 합친 풀**로 잡는다. 키워드 하나로 잡으면 엉뚱한 키워드는
+    자기 노이즈를 코어로 삼는다. 대부분의 키워드가 맞으면 풀의 다수가 그 기술의 IPC다.
+
+    표시만 하고 버리지 않는다 — 버릴지는 소비자가 정한다. 실측에서 이 표시로 걸러
+    집계하면 DART 매칭 기업 중 적합한 곳은 그대로(11.9곳)이고 부적합이 3.5→2.3곳으로
+    줄었다. 걸러지는 건 주로 특허 1~2건으로 끼어든 기업이다.
+    메인그룹 단위라 **같은 메인그룹 안의 노이즈는 못 가른다** — 식물 유전자 교정
+    (C12N 15/82)과 동물세포 교정(C12N 15/85)이 둘 다 `C12N 15`다. 대표 IPC(첫 번째)만
+    보면 더 가르지만 적합 특허를 12~36% 잃어 기업이 빠진다.
+    IPC가 비어 있는 특허는 판단 근거가 없으므로 True로 둔다.
+    """
+    df: Counter = Counter()
+    seen: set[str] = set()
+    for res in results:
+        for it in res["items"]:
+            key = it.get("app_no") or it.get("title")
+            if key in seen:
+                continue
+            seen.add(key)
+            df.update(_ipc_main_groups(it.get("ipc", "")))
+    if not df:
+        core: set[str] = set()
+    else:
+        top = df.most_common(1)[0][1]
+        core = {g for g, n in df.items() if n >= frac * top}
+    for res in results:
+        for it in res["items"]:
+            groups = _ipc_main_groups(it.get("ipc", ""))
+            it["ipc_core"] = not groups or bool(groups & core)
+    return core
+
+
+def core_only(results: list[dict]) -> tuple[list[dict], set[str]]:
+    """핵심 IPC 밖 특허를 뺀 결과 사본과 핵심 메인그룹. `total`(KIPRIS 총건수)은 그대로 둔다.
+
+    IPC 제한 없이 검색한 결과에만 쓴다. 이미 `ipc`로 제한해 받은 결과에 다시 쓰면
+    제한된 풀에서 코어를 새로 잡아 저장된 코어의 작은 그룹을 떨군다."""
+    core = mark_ipc_core(results)
+    return [{**r, "items": [it for it in r["items"] if it["ipc_core"]]} for r in results], core
+
+
+def aggregate_applicants(results: list[dict]
+                         ) -> tuple[Counter, dict[str, set[str]], dict[str, list[dict]]]:
+    """여러 검색 결과에서 출원인별 (특허 건수, 등장한 키워드 집합, 특허 목록)을 낸다.
 
     같은 특허가 여러 키워드에 걸리면 중복 집계되므로 출원번호로 한 번 접는다.
 
     키워드 집합을 함께 주는 이유: 넓은 키워드 하나에서만 많이 나온 대기업과
     여러 키워드에 걸쳐 꾸준히 나온 기업은 성격이 다르다. 점수만으로는 안 갈린다.
+
+    특허 목록은 온보딩 순서를 정할 때 쓴다(최근 출원 건수, 제목 기반 적합도 판정).
     """
     seen: set[str] = set()
     counter: Counter = Counter()
     keywords: dict[str, set[str]] = {}
+    patents: dict[str, list[dict]] = {}
     for res in results:
         for item in res["items"]:
             if item["app_no"] and item["app_no"] in seen:
@@ -126,11 +212,19 @@ def aggregate_applicants(results: list[dict]) -> tuple[Counter, dict[str, set[st
             for name in item["applicants"]:
                 counter[name] += 1
                 keywords.setdefault(name, set()).add(res["word"])
-    return counter, keywords
+                patents.setdefault(name, []).append(item)
+    return counter, keywords, patents
+
+
+def count_recent(items: list[dict], this_year: int | None = None) -> int:
+    """최근 RECENT_YEARS년 안에 출원한 건수. 출원일을 모르는 것은 센다(거를 근거가 없다)."""
+    cutoff = f"{(this_year or datetime.utcnow().year) - RECENT_YEARS}0000"
+    return sum(1 for it in items if not it.get("app_date") or it["app_date"] >= cutoff)
 
 
 def match_companies(db: Session, applicants: Counter, limit: int | None = None,
-                    keywords: dict[str, set[str]] | None = None) -> dict:
+                    keywords: dict[str, set[str]] | None = None,
+                    patents: dict[str, list[dict]] | None = None) -> dict:
     """출원인명 → 법인번호 → DART 기업.
 
     이름으로 매칭하지 않는다 — 특허는 한글 표기("주식회사 엘지화학"), DART는 영문
@@ -166,7 +260,9 @@ def match_companies(db: Session, applicants: Counter, limit: int | None = None,
         cnt = applicants[name]
         jurir = by_name.get(name)
         base = {"applicant": name, "patents": cnt, "jurir_no": jurir,
-                "keywords": sorted(keywords.get(name, [])) if keywords else []}
+                "keywords": sorted(keywords.get(name, [])) if keywords else [],
+                # 특허 목록을 안 주면 누적 건수로 대신한다(예전 순서 그대로)
+                "recent": count_recent(patents.get(name, [])) if patents else cnt}
 
         if jurir and jurir in tracked_by_jurir:
             c = tracked_by_jurir[jurir]

@@ -130,8 +130,9 @@ export default function TechnologyDetailPage() {
       if (!window.confirm(
         (cap === 0
           ? `등록 가능한 기업 ${candidates}개사를 모두 등록하고 사업보고서를 분석합니다.\n`
-          : `상위 ${cap}개 기업을 등록하고 사업보고서를 분석합니다(현재 후보 ${candidates}개).\n`) +
-        `보고서 1건당 약 $0.014 — 지금 기준 약 $${(n * 0.0135).toFixed(2)}가 발생합니다.\n` +
+          : `${cap}개 기업을 골라 등록하고 사업보고서를 분석합니다(현재 후보 ${candidates}개).\n` +
+            `특허 제목으로 관련성을 판정해 최근 10년 출원이 많은 순으로 고릅니다.\n`) +
+        `보고서 1건당 약 $0.048 — 지금 기준 약 $${(n * 0.048).toFixed(2)}가 발생합니다.\n` +
         `계속할까요?`,
       )) return;
     }
@@ -294,6 +295,13 @@ export default function TechnologyDetailPage() {
               );
             })}
           </div>
+          {/* 이 분류 안에서만 검색한다 — 위 건수도 제한된 건수다 */}
+          {tech.ipc_core.length > 0 && (
+            <p className="mt-2 text-xs text-text-secondary">
+              검색 분류(IPC): <span className="font-mono">{tech.ipc_core.join(" · ")}</span>
+              {" "}— 키워드를 바꾸면 다음 스캔에서 다시 잡습니다
+            </p>
+          )}
           {tech.keyword_stats.some((s) => s.broad) && (
             <p className="mt-2 text-xs text-amber-700">
               ⚠ 결과가 2만 건을 넘습니다. 산업 전체를 가리키는 일반어면 더 구체적인 층위로
@@ -341,7 +349,7 @@ export default function TechnologyDetailPage() {
           </div>
         )}
 
-        {/* 분석 상한 — 비용이 기업 수만큼 곱해지므로(1건당 약 $0.0135) 여기서 정한다 */}
+        {/* 분석 상한 — 비용이 기업 수만큼 곱해지므로(1건당 약 $0.048) 여기서 정한다 */}
         <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
           <div>
             <span className="text-sm font-medium text-text-primary">분석 상한</span>
@@ -403,6 +411,12 @@ export default function TechnologyDetailPage() {
               <Link to="/settings/batches" className="text-accent underline">
                 진행 상황
               </Link>
+              {scanResult.onboarded.registered.map((r) => (
+                <div key={r.corp_name}>
+                  {r.corp_name}
+                  {r.reason && <span className="ml-1 text-text-tertiary">— {r.reason}</span>}
+                </div>
+              ))}
             </div>
           )}
         </div>

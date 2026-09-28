@@ -40,6 +40,7 @@ def _to_response(tech: Technology) -> TechnologyResponse:
     return TechnologyResponse(
         id=tech.id, name=tech.name, description=tech.description,
         keywords=tech_scan.get_keywords(tech), keyword_stats=_keyword_stats(tech),
+        ipc_core=tech_scan.get_ipc_core(tech),
         max_companies=tech.max_companies,
         is_active=tech.is_active, last_scanned_at=tech.last_scanned_at,
         created_at=tech.created_at,
@@ -118,7 +119,11 @@ def update_technology(tech_id: int, body: TechnologyUpdate, db: Session = Depend
     tech = get_or_404(db, Technology, tech_id, "기술을 찾을 수 없습니다.")
     data = body.model_dump(exclude_unset=True)
     if "keywords" in data and data["keywords"] is not None:
-        data["keywords"] = json.dumps(data["keywords"], ensure_ascii=False)
+        new = json.dumps(data["keywords"], ensure_ascii=False)
+        if new != tech.keywords:
+            # 코어는 키워드가 정한다 — 다음 스캔이 제한 없이 검색해 다시 잡는다
+            tech.ipc_core = None
+        data["keywords"] = new
     for k, v in data.items():
         setattr(tech, k, v)
     db.commit()

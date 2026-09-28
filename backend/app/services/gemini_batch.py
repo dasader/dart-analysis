@@ -16,14 +16,19 @@ from google.genai import types
 from google.genai.errors import ServerError
 
 from app.config import settings
+from app.constants import MAX_TOKENS_PREFIX
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "gemini-3.5-flash-lite"
+# 3.5-flash-lite보다 세 유형 모두 촘촘하고 원문에 붙는다(2026-09 실측: 종속회사 수 일치
+# 6/7→7/7, 삼성전자 R&D 과제 8→47행, 국가전략기술 원문 불일치 인용 7→1). 대신 출력이
+# 1.7배 길어 보고서 1건 $0.019→$0.048(batch, 2027년부터 $0.096). 근거는 CLAUDE.md
+MODEL_NAME = "gemini-3.8-flash"
 
 # 사업보고서 분석은 추론이 아니라 추출·나열 과제 — thinking을 올려도 품질이 오르지 않고
-# 출력 예산만 잠식한다(실측: minimal과 high의 종속회사 표 커버리지 동일, high가 2배 느림).
-THINKING_LEVEL = "MINIMAL"
+# 출력 예산만 잠식한다(실측: 3.8 MEDIUM이 LOW보다 나은 게 없고 thinking만 과금).
+# 3.8은 MINIMAL을 지원하지 않는다(400) — LOW가 하한이고 LOW에서 thinking 토큰은 0이다
+THINKING_LEVEL = "LOW"
 
 # 폴링을 끝내도 되는 상태들
 TERMINAL_STATES = frozenset({
@@ -100,8 +105,12 @@ def parse_result_line(line: str) -> tuple[str, str | None, str | None]:
 
     parts = (candidates[0].get("content") or {}).get("parts") or []
     text = "".join(p.get("text", "") for p in parts)
+    finish = candidates[0].get("finishReason")
+    if finish == "MAX_TOKENS":
+        # 본문이 있어도 상한에서 잘린 것이다 — 3종 JSON의 뒤쪽 유형이 반쪽이 된다
+        return key, None, f"{MAX_TOKENS_PREFIX}출력 토큰 상한에 걸려 응답이 잘렸습니다 ({len(text):,}자)"
     if not text:
-        return key, None, f"본문이 비어 있습니다 (finishReason={candidates[0].get('finishReason')})"
+        return key, None, f"본문이 비어 있습니다 (finishReason={finish})"
     return key, text, None
 
 

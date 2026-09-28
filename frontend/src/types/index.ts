@@ -143,6 +143,7 @@ export interface Technology {
   description: string;
   keywords: string[];
   keyword_stats: KeywordStat[];
+  ipc_core: string[];
   max_companies: number;
   is_active: boolean;
   last_scanned_at: string | null;
@@ -170,7 +171,11 @@ export interface ScanResult {
   new: number;
   kept: number;
   dropped: number;
-  onboarded: { registered: { corp_name: string }[]; queued_reports: number } | null;
+  onboarded: {
+    // role·reason은 후보가 상한보다 많아 적합도 판정을 거쳤을 때만 온다
+    registered: { corp_name: string; role: string | null; reason: string | null }[];
+    queued_reports: number;
+  } | null;
 }
 
 /** 런타임에 바꿀 수 있는 설정 (DB 저장, 재시작 불필요) */

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 from google.genai.errors import ServerError
 
+from app.constants import MAX_TOKENS_PREFIX
 from app.services.analysis_service import extract_json
 from app.services.gemini_batch import build_jsonl_line, parse_result_line
 
@@ -22,7 +23,7 @@ def test_jsonl_line_uses_rest_schema():
     assert req["systemInstruction"]["parts"][0]["text"] == "시스템 지침"
     assert req["contents"][0]["parts"][0]["text"] == "보고서 본문"
     assert req["generationConfig"]["maxOutputTokens"] == 24576
-    assert req["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "MINIMAL"
+    assert req["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "LOW"
 
 
 def test_jsonl_line_pins_response_schema():
@@ -71,10 +72,23 @@ def test_parse_empty_body_reports_finish_reason():
     """본문이 비면 원인 파악을 위해 finishReason을 메시지에 남긴다."""
     line = json.dumps({
         "key": "7",
-        "response": {"candidates": [{"content": {"parts": []}, "finishReason": "MAX_TOKENS"}]},
+        "response": {"candidates": [{"content": {"parts": []}, "finishReason": "SAFETY"}]},
     })
     _, text, err = parse_result_line(line)
-    assert text is None and "MAX_TOKENS" in err
+    assert text is None and "SAFETY" in err
+
+
+def test_parse_max_tokens_fails_even_with_body():
+    """상한에서 잘린 응답은 본문이 있어도 실패다 — 3종 JSON의 뒤쪽 유형이 반쪽이 된다."""
+    line = json.dumps({
+        "key": "7",
+        "response": {"candidates": [{
+            "content": {"parts": [{"text": '{"subsidiary": "## 요약 ## 시사점", "rnd": "## 요'}]},
+            "finishReason": "MAX_TOKENS",
+        }]},
+    })
+    _, text, err = parse_result_line(line)
+    assert text is None and err.startswith(MAX_TOKENS_PREFIX)
 
 
 def test_parse_no_candidates():

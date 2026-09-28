@@ -144,6 +144,10 @@ class Technology(Base):
     # (실측: 4,635건→100%, 24,045건→32%, 81,435건→9%) 사람이 보고 고칠 수 있어야 한다.
     # 스캔 응답에만 실으면 화면을 닫는 순간 사라진다
     keyword_stats = Column(Text, nullable=True)
+    # 핵심 IPC 메인그룹(JSON 배열, 예: ["H01M 10", "C01B 25"]). 키워드를 바꾼 뒤 첫 스캔이
+    # 제한 없이 검색해 잡고, 이후 스캔·종합 보고서는 이 안에서만 검색한다(tech_scan.scan).
+    # 키워드를 고치면 비운다 — 코어는 키워드가 정한다
+    ipc_core = Column(Text, nullable=True)
     max_companies = Column(Integer, nullable=False, default=5)   # 온보딩 상한(비용 통제)
     is_active = Column(Boolean, default=True)
     last_scanned_at = Column(DateTime, nullable=True)

@@ -4,7 +4,7 @@
            → 법인번호로 DART 기업 조인 → [--onboard] 등록·보고서 수집·분석 큐 투입
 
 `--onboard` 없이 돌리면 **조회만** 한다(비용 없음). 붙이면 실제로 기업을 등록하고
-보고서를 받고 분석을 건다 — 보고서 1건당 약 $0.0135이므로 --max로 상한을 둔다.
+보고서를 받고 분석을 건다 — 보고서 1건당 약 $0.048이므로 --max로 상한을 둔다.
 
 실행:
     cd backend
@@ -62,8 +62,10 @@ async def run(args) -> None:
             print("\n검색 결과가 없어 중단합니다.")
             return
 
-        applicants, kw_hits = patent_search.aggregate_applicants(results)
-        m = patent_search.match_companies(db, applicants, limit=args.top, keywords=kw_hits)
+        results, _ = patent_search.core_only(results)
+        applicants, kw_hits, patents = patent_search.aggregate_applicants(results)
+        m = patent_search.match_companies(db, applicants, limit=args.top, keywords=kw_hits,
+                                          patents=patents)
         n_broad = sum(1 for r in results if r["total"] > patent_search.BROAD_THRESHOLD)
         if n_broad:
             print(f"\n  ※ 넓은 키워드 {n_broad}개 포함. 아래 '키워드' 열이 1이면 "
@@ -92,15 +94,19 @@ async def run(args) -> None:
 
         if not args.onboard:
             print(f"\n(조회만 했습니다. --onboard --max N 을 붙이면 상위 N개를 "
-                  f"등록·수집·분석합니다. 보고서 1건당 약 $0.0135)")
+                  f"등록·수집·분석합니다. 보고서 1건당 약 $0.048)")
             print()
             show_usage(db)
             return
 
         print(f"\n■ 온보딩 (상위 {args.max}개)")
-        out = await tech_pipeline.onboard(db, m["available"], args.max, args.year)
+        cands = await tech_pipeline.order_candidates(
+            (args.description or " ".join(keywords))[:40], args.description or ", ".join(keywords),
+            m["available"], patents, args.max)
+        out = await tech_pipeline.onboard(db, cands, args.max, args.year)
         for r in out["registered"]:
-            print(f"  등록: {r['corp_name']}")
+            why = f"  [{r['role']}] {r['reason'] or ''}" if r.get("role") else ""
+            print(f"  등록: {r['corp_name']}{why}")
         for r in out["reports"]:
             print(f"  보고서: {r['company']} {r['fiscal_year']}년 (id={r['report_id']})")
         for f in out["failed"]:

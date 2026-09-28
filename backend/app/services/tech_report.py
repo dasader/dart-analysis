@@ -37,7 +37,7 @@ from app.services.report_service import extract_text_from_report
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-3.5-flash-lite"
+MODEL = "gemini-3.8-flash"   # MINIMAL 미지원 — LOW가 하한
 MAX_OUTPUT_TOKENS = 16384
 
 # 「기술 개요」를 쓸 초록 재료의 수. **기업 목록과는 무관하다** — 기업 발굴과
@@ -45,6 +45,11 @@ MAX_OUTPUT_TOKENS = 16384
 MAX_PATENTS = 80
 ABSTRACT_CHARS = 500
 MAX_ANALYSIS_CHARS = 3000
+
+# rnd는 앞 N자 대신 이 절들을 제목으로 잘라 싣는다. 「기술 사업화 동향」이 사업화 단계
+# 판정의 핵심 근거인데 3.8-flash에서 길어져(POSCO홀딩스 52행·3,971자) 앞 3,000자에서 잘렸다.
+# 상한은 실측 최대의 여유분 — 요약 최대 243자, 사업화 동향 최대 3,971자(3.8 LOW, 7개사)
+RND_SECTIONS = {"요약": 600, "기술 사업화 동향": 5000}
 
 # 이보다 오래된 특허는 초록 재료에서 뺀다.
 # 상한을 늘리면 뒤쪽(관련도가 낮고 오래된 것)이 딸려 들어오는데, 10년도 더 된 특허의
@@ -93,16 +98,15 @@ SYSTEM = """당신은 기술 동향 분석가입니다. 특정 기술에 대해 
 **이 보고서에서 가장 자세해야 할 부분입니다.** 주어진 특허 초록에서 읽히는 기술의
 실제 내용을 정리하십시오. 초록에만 있는 정보이므로 사업보고서로는 알 수 없는 것입니다.
 
-소주제로 나눠 각각 3~5문장씩 쓰십시오. 예를 들어 이런 축으로 나눌 수 있습니다.
-- 이 기술이 풀려는 문제 (무엇이 한계이고 왜 어려운가)
-- 핵심 소재·조성 (결정 구조, 도핑·치환 원소, 조성비)
-- 제조·공정 (합성 방법, 열처리, 입도 제어, 시트화)
-- 성능·안정성 확보 방법 (이온전도도, 수분·대기 안정성, 계면 저항)
-축은 실제 초록에 나타난 것에 맞춰 정하십시오. 초록에 없는 축은 만들지 마십시오.
-구체적인 물질명·수치·공정명을 초록에서 그대로 인용해 쓰십시오.
+소주제(`###`) 3~5개로 나눠 각각 3~5문장씩 쓰십시오. 첫 소주제는 "이 기술이 풀려는 문제"로
+하고, 나머지는 **초록에 실제로 많이 나온 접근**을 기준으로 이 기술 분야의 말로 이름 붙이십시오
+(예: 소재 분야면 조성·합성 공정, 바이오면 표적·전달 방법·세포 제조, 소프트웨어면 모델 구조·
+학습 방법). 소주제 제목에 괄호 설명을 붙이지 마십시오.
+구체적인 물질명·수치·공정명·표적명을 초록에서 그대로 인용해 쓰십시오.
 
 ## 주요 기업
-사업보고서가 있는 기업(추적 중·미등록)만 다룹니다.
+표는 자료의 「주요 기업」 표 틀을 **행·순서·링크 그대로** 옮기고 `?` 칸만 채우십시오.
+틀에 없는 기업을 더하지 마십시오. 자료에 「등록 후보」 줄이 있으면 표 바로 아래에 그대로 옮기십시오.
 **특허 건수는 뒤의 「출원인 집계」에 이미 나오므로 여기서는 반복하지 마십시오.**
 
 여기서 답할 것은 하나입니다 — **이 기업이 이 기술을 실제로 어느 단계까지 가져갔는가.**
@@ -110,20 +114,26 @@ SYSTEM = """당신은 기술 동향 분석가입니다. 특정 기술에 대해 
 
 | 기업 | 단계 | 근거 | 분석보고서 |
 |---|---|---|---|
-| (DART 기업명) | (아래 다섯 중 하나) | (그렇게 본 이유를 한 문장으로) | (출원인 집계표의 `분석보고서` 칸을 **링크 문법 그대로** 옮기십시오. `미수집`이면 그대로 "미수집") |
+| (틀 그대로) | (`?`면 아래 다섯 중 하나) | (`?`면 그 단계의 근거가 된 대목의 핵심 구절을 따옴표로 짧게 인용) | (틀 그대로) |
 
 단계는 **사업보고서에서 확인되는 것**을 기준으로 다섯 중 하나를 고르십시오.
 특허만으로는 연구 사실만 알 수 있을 뿐 단계를 알 수 없습니다.
-- `추진·양산 중` — 양산 설비, 공급 계약, 매출 발생이 확인됨
+- `추진·양산 중` — **이 기술 제품의** 양산 설비, 공급 계약, 매출 발생이 확인됨
+  (같은 대목에 붙은 다른 제품의 계약·수주는 해당하지 않습니다)
 - `사업계획` — 투자 결정, 합작·MOU, 실증 프로젝트, 파일럿 라인 등 구체적 움직임이 있음
 - `연구개발` — 사업보고서의 연구개발 과제·조직에 이 기술이 **명시적으로** 올라와 있음
 - `관심·검토` — 특허는 내지만 사업보고서에 이 기술 언급이 없음(= 아직 공시 단계가 아님)
 - `판단 불가` — 사업보고서가 미수집이거나 근거가 부족함
 
 **단계 판정의 근거는 「추적 중 기업의 사업보고서 분석」에 있는
-`이 기술이 직접 언급된 대목`뿐입니다.** 그 항목이 없는 기업은 사업보고서에 이 기술이
-나오지 않는다는 뜻이므로 반드시 `관심·검토`입니다. 같은 산업이라는 이유로 다른 과제를
-끌어와 올려잡지 마십시오. 표의 `근거` 칸과 아래 서술이 어긋나서는 안 됩니다.
+`이 기술이 직접 언급된 대목`뿐입니다.**
+- `단계: … (확정)`이 적힌 기업은 **그 단계를 그대로** 쓰십시오
+- 그 밖의 기업은 대목을 **모두** 읽고, 그중 **가장 높은 단계의 신호**로 정하십시오.
+  연혁·임원 보수 사유·조직 신설 같은 대목에도 신호가 있습니다(예: "사업화 추진팀 신설",
+  "실증 프로젝트 업무협약", "지분 투자"는 `사업계획`, 이 기술 제품의 "공장 준공"은 `추진·양산 중`)
+- 용어가 걸렸어도 이 기술과 무관한 맥락(예: 종자 '유전자원', 가전제품 배터리)뿐이면 `관심·검토`입니다
+같은 산업이라는 이유로 다른 과제를 끌어와 올려잡지 마십시오. 표의 `근거` 칸과 아래 서술이
+어긋나서는 안 됩니다.
 
 표 아래에 기업마다 **3~5문장**으로 자세히 쓰십시오. 다음을 담으십시오.
 - 특허에서 읽히는 그 기업의 기술적 접근 방향 (어떤 문제를 어떤 방식으로 푸는가)
@@ -135,11 +145,7 @@ SYSTEM = """당신은 기술 동향 분석가입니다. 특정 기술에 대해 
 
 ## 시사점
 3~5개. 각 항목 끝에 근거를 `[특허]` 또는 `[사업보고서]`로 표시하십시오.
-
-## 참고 — 산업 밖 주체
-**반드시 이 제목으로, 보고서의 맨 마지막에 두십시오.**
-대학·연구소·외국기업 등 사업보고서가 없는 출원인을 건수와 함께 나열만 하십시오.
-해설은 붙이지 마십시오. 없으면 이 절 자체를 생략하십시오."""
+**시사점이 마지막 절입니다.** 대학·연구소 목록은 따로 붙으므로 쓰지 마십시오."""
 
 
 _client: genai.Client | None = None
@@ -202,14 +208,31 @@ def _patent_section(items: list[dict]) -> str:
         for it in items)
 
 
-def tech_terms(tech: Technology) -> list[str]:
-    """기술명·키워드에서 뽑은 검색 용어. 사업보고서에 이 기술이 실제로 나오는지 재는 데 쓴다."""
+# 사업보고서 대조에 쓸 용어는 수집한 특허의 이 비율 이상에 나와야 한다.
+# 기술명의 머리말(예: '전고체 배터리'의 '배터리')은 소비자 용어라 특허는 거의 쓰지 않는데
+# (실측: 전고체 특허 671건 중 3%) 사업보고서에는 흔하다(11개사 중 8곳, 삼성전자는 청소기
+# 배터리로 30회). 이게 걸리면 전고체와 무관한 기아·삼성전자·현대차가 '직접 언급'을 얻어
+# 모델이 셋을 `연구개발`로 올렸다. 핵심어는 이 선을 여유 있게 넘는다(전고체 57%·황화물계 52%)
+TERM_MIN_SHARE = 0.05
+
+
+def tech_terms(tech: Technology, results: list[dict] | None = None) -> list[str]:
+    """기술명·키워드에서 뽑은 검색 용어. 사업보고서에 이 기술이 실제로 나오는지 재는 데 쓴다.
+
+    `results`를 주면 **특허가 실제로 쓰는 말**만 남긴다(`TERM_MIN_SHARE`).
+    """
     words: set[str] = set()
     for src in [tech.name, *tech_scan.get_keywords(tech)]:
         for tok in re.split(r"[\s,·/]+", src):
             tok = tok.strip()
             if len(tok) >= 3:
                 words.add(tok)
+    if results:
+        docs = {it["app_no"] or id(it): it["title"] + (it.get("abstract") or "")
+                for r in results for it in r["items"]}.values()
+        kept = {w for w in words if sum(w in d for d in docs) >= TERM_MIN_SHARE * len(docs)}
+        if kept:             # 전부 걸러지면 거를 근거가 약한 것이다 — 원래대로 쓴다
+            words = kept
     return sorted(words)
 
 
@@ -230,29 +253,73 @@ def mention_sentences(text: str, terms: list[str], limit: int = 4) -> list[str]:
     return out
 
 
-def _mentions_in_source(report: Report, terms: list[str], limit: int = 4) -> list[str]:
-    """사업보고서 원문에서 기술 용어가 나온 대목. 읽기 실패는 조용히 넘긴다
-    (보고서 생성이 원문 파싱 때문에 통째로 죽으면 안 된다)."""
-    if limit <= 0 or not report.file_path:
-        return []
+def _source_text(report: Report) -> str | None:
+    """사업보고서 원문. 읽기 실패는 None — 보고서 생성이 원문 파싱 때문에 통째로 죽으면 안 된다."""
+    if not report.file_path:
+        return None
     try:
-        body = extract_text_from_report(report.file_path)
+        return extract_text_from_report(report.file_path) or None
     except Exception:
         logger.warning("원문 읽기 실패, 건너뜀: report_id=%s", report.id)
-        return []
+        return None
+
+
+def _mentions_in_source(report: Report, terms: list[str], limit: int = 5) -> list[str]:
+    """사업보고서 원문에서 기술 용어가 나온 대목."""
+    body = _source_text(report) if limit > 0 else None
     if not body:
         return []
 
+    # 같은 대목이 겹쳐 잡히거나(용어 둘이 한 문장에) 원문에 두 번 실리는(임원 보수 사유 등)
+    # 경우를 접는다. 실측: POSCO홀딩스 4칸 중 2칸이 같은 연혁 한 줄이었다
     out: list[str] = []
+    end = -1
     for m in re.finditer("|".join(re.escape(t) for t in terms), body):
-        seg = re.sub(r"\s+", " ", body[max(0, m.start() - 90): m.start() + 110]).strip()
-        out.append(f"(원문) …{seg}…")
+        if m.start() < end:
+            continue
+        end = m.start() + 110
+        seg = re.sub(r"\s+", " ", body[max(0, m.start() - 90): end]).strip()
+        line = f"(원문) …{seg}…"
+        if line not in out:
+            out.append(line)
         if len(out) >= limit:
             break
     return out
 
 
-def _company_section(db: Session, tech: Technology) -> tuple[str, set[int]]:
+def _section(md: str, title: str, cap: int) -> str | None:
+    """`## title`부터 다음 `## ` 제목 전까지. 상한을 넘으면 줄 단위로 자른다(표 행이 반쪽 나지 않게)."""
+    m = re.search(rf"^## {re.escape(title)}[^\n]*\n", md, re.M)
+    if not m:
+        return None
+    nxt = re.search(r"^## ", md[m.end():], re.M)
+    sec = md[m.start(): (m.end() + nxt.start()) if nxt else len(md)].rstrip()
+    if len(sec) > cap:
+        sec = sec[:cap].rsplit("\n", 1)[0] + "\n…(이하 생략)"
+    return sec
+
+
+def _analysis_excerpt(a: Analysis) -> str:
+    """분석 결과 중 프롬프트에 실을 부분. rnd는 RND_SECTIONS 절, 나머지와 절이 없는 옛 결과는 앞 N자."""
+    md = a.result_summary or ""
+    if a.analysis_type == "rnd":
+        secs = {t: _section(md, t, cap) for t, cap in RND_SECTIONS.items()}
+        if secs["기술 사업화 동향"]:
+            return "\n\n".join(s for s in secs.values() if s)
+    return md[:MAX_ANALYSIS_CHARS]
+
+
+def _live(tech: Technology) -> list:
+    """마지막 스캔에 나온 출원인만. 이탈 기업은 지우지 않고 `last_seen_at`으로 드러내므로
+    (tech_scan._merge) 거르지 않으면 키워드를 바꾸기 전의 기업이 보고서에 남는다
+    — 실측: 옛 키워드 '리튬 이온 전도도'로만 걸렸던 HLB제약이 전고체 보고서의 주요 기업에 올랐다."""
+    at = tech.last_scanned_at
+    return [tc for tc in tech.companies
+            if not (at and tc.last_seen_at and tc.last_seen_at < at)]
+
+
+def _company_section(db: Session, tech: Technology,
+                     terms: list[str] | None = None) -> tuple[str, set[int]]:
     """추적 중 기업의 사업보고서 분석 요약 — 각 기업의 **최신 연도** 1건만.
 
     반환: (마크다운, 쓰인 회계연도 집합). 연도 집합은 보고서 머리말에
@@ -260,11 +327,12 @@ def _company_section(db: Session, tech: Technology) -> tuple[str, set[int]]:
     다를 수 있으므로 하나로 뭉뚱그리면 안 된다.
     """
     blocks: list[str] = []
+    table: list[str] = []            # 「주요 기업」 표의 틀 — 행·링크·확정 단계는 코드가 정한다
     years: set[int] = set()
     links = _report_links(db, tech)
-    terms = tech_terms(tech)
+    terms = terms or tech_terms(tech)
 
-    for tc in sorted(tech.companies, key=lambda t: -t.patent_count):
+    for tc in sorted(_live(tech), key=lambda t: -t.patent_count):
         if tc.status != "tracked" or not tc.company_id:
             continue
 
@@ -277,14 +345,16 @@ def _company_section(db: Session, tech: Technology) -> tuple[str, set[int]]:
                 .order_by(Report.fiscal_year.desc())
                 .all())
         if not rows:
-            blocks.append(f"### {name}\n- **사업보고서 미수집** — 아직 수집·분석하지 "
-                          f"않았습니다. 이 기업이 그 기술을 하지 않는다는 뜻이 아닙니다.")
+            blocks.append(f"### {name}\n- **단계: 판단 불가 (확정)**\n- **사업보고서 미수집** — "
+                          f"아직 수집·분석하지 않았습니다. 이 기업이 그 기술을 하지 않는다는 뜻이 아닙니다.")
+            table.append(f"| {name} | 판단 불가 | 사업보고서 미수집 | 미수집 |")
             continue
 
         latest_year = rows[0][1].fiscal_year
         years.add(latest_year)
         link = links.get(tc.company_id)
         url = f"/companies/{tc.company_id}/reports/{link[0]}" if link else ""
+        cell = f"[{link[1]}년 사업보고서]({url})" if link else "미수집"
         parts = [f"### {name}\n- {latest_year}년 사업보고서 기준"
                  + (f" / 분석보고서 링크: {url}" if url else "")]
 
@@ -294,22 +364,47 @@ def _company_section(db: Session, tech: Technology) -> tuple[str, set[int]]:
         # (실측: POSCO홀딩스가 원문 3회인데 요약엔 0회라 '관심·검토'로 내려갔다)
         joined = "\n".join((a.result_summary or "") for a, r in rows
                            if r.fiscal_year == latest_year)
-        hits = mention_sentences(joined, terms)
-        hits += _mentions_in_source(rows[0][1], terms, limit=4 - len(hits))
+        # 원문은 요약의 남은 칸이 아니라 **자기 몫**을 갖는다. 요약이 4칸을 다 채우면
+        # 원문을 보지 않았는데, 사업화 신호는 대개 원문에만 있다(실측: 삼성SDI의
+        # "BMW와 전고체 배터리 실증 프로젝트 업무협약"·"ASB 사업화 추진팀 신설"이
+        # 한 번도 프롬프트에 실리지 않아 단계가 회차마다 흔들렸다)
+        # 분석 결과에는 모델의 해석이 섞인다. **원문에 없는 기술 용어는 근거로 받지 않는다.**
+        # 실측: 현대자동차 원문에 '전고체'가 0회인데 3.8-flash 분석이 Solid Power·Factorial 지분
+        # 투자를 "전고체 배터리 상용화 경쟁에 대비"로 풀어 써서, 그 문장이 '직접 언급'으로 잡혀
+        # 4회 모두 `사업계획`이 됐다. 원문을 못 읽으면 예전처럼 분석 결과를 그대로 본다
+        body = _source_text(rows[0][1])
+        seen = [t for t in terms if t in body] if body else terms
+        hits = mention_sentences(joined, seen, limit=3) if seen else []
+        hits += _mentions_in_source(rows[0][1], terms)
         if hits:
             parts.append("- **이 기술이 직접 언급된 대목:**\n"
                          + "\n".join(f"  - {h}" for h in hits))
+            table.append(f"| {name} | ? | ? | {cell} |")
         else:
-            parts.append("- **이 기술은 사업보고서에 언급되지 않았습니다.** 같은 산업의 "
+            table.append(f"| {name} | 관심·검토 | 사업보고서에 언급 없음 | {cell} |")
+            parts.append("- **단계: 관심·검토 (확정)**\n"
+                         "- **이 기술은 사업보고서에 언급되지 않았습니다.** 같은 산업의 "
                          "다른 과제를 근거로 삼지 마십시오.")
 
         for a, r in rows:
             if r.fiscal_year != latest_year:
                 continue
-            parts.append(f"\n**{a.analysis_type}**\n{(a.result_summary or '')[:MAX_ANALYSIS_CHARS]}")
+            parts.append(f"\n**{a.analysis_type}**\n{_analysis_excerpt(a)}")
         blocks.append("\n".join(parts))
 
-    return ("\n\n".join(blocks) if blocks else "(추적 중인 기업이 없습니다)"), years
+    if not blocks:
+        return "(추적 중인 기업이 없습니다)", years
+
+    # 행 선택·링크·확정 단계를 모델에 맡기면 3.5-flash-lite가 추적 기업을 빠뜨리고(3회 중 2회)
+    # 미등록 후보에 대학·연구소를 섞었다(3회 중 2회). 코드가 아는 것은 코드가 채운다
+    blocks.append("### 「주요 기업」 표 틀\n이 표를 행·순서·링크 그대로 옮기고 `?` 칸만 채우십시오.\n\n"
+                  "| 기업 | 단계 | 근거 | 분석보고서 |\n|---|---|---|---|\n" + "\n".join(table))
+    cands = [tc.corp_name for tc in sorted(_live(tech), key=lambda t: -t.patent_count)
+             if tc.status == "available" and tc.corp_name]
+    if cands:
+        blocks.append("### 등록 후보\n표 아래에 이 줄을 그대로 옮기십시오.\n\n"
+                      f"등록 후보(DART 상장·미등록, 사업보고서 미수집): {', '.join(cands)}")
+    return "\n\n".join(blocks), years
 
 
 # KIPRIS registerStatus 실측 분포: 공개·등록·거절·취하·소멸
@@ -382,7 +477,7 @@ def _applicant_table(db: Session, tech: Technology,
     주지 않으면 모델이 둘 다 "사업보고서에 언급 없음"으로 써서 전업 배터리 회사가
     그 기술을 안 하는 것처럼 읽힌다(실측: LG에너지솔루션).
     """
-    rows = sorted(tech.companies, key=lambda t: -t.patent_count)[:30]
+    rows = sorted(_live(tech), key=lambda t: -t.patent_count)[:30]
     if not rows:
         return "(스캔 결과가 없습니다)"
 
@@ -400,6 +495,9 @@ def _applicant_table(db: Session, tech: Technology,
             status = f"{status} — {tc.exclude_reason}"
 
         s = (stats or {}).get(tc.applicant_name) or {}
+        # 합계도 등록·공개와 같은 검색에서 잰다. 스캔 시점 값(patent_count)과 섞으면
+        # 합계 < 등록+공개가 되는 행이 생긴다
+        total = s.get("total", tc.patent_count)
         reg = s.get("registered", "?")
         pend = s.get("pending", "?")
 
@@ -407,9 +505,28 @@ def _applicant_table(db: Session, tech: Technology,
         cell = (f"[{link[1]}년 사업보고서](/companies/{tc.company_id}/reports/{link[0]})"
                 if link else "미수집")
 
-        out.append(f"| {tc.applicant_name} | {tc.corp_name or '-'} | {tc.patent_count} | "
+        out.append(f"| {tc.applicant_name} | {tc.corp_name or '-'} | {total} | "
                    f"{reg} | {pend} | {hits} | {status} | {cell} |")
     return "\n".join(out)
+
+
+# 이 제목은 프론트(TechReport.tsx)가 접는 기준이다 — 바꾸면 양쪽을 같이 바꾼다
+APPENDIX_TITLE = "## 참고 — 산업 밖 주체"
+_APPENDIX_RE = re.compile(r"^##\s*참고.*산업\s*밖\s*주체.*$", re.M)
+
+
+def appendix(tech: Technology, stats: dict[str, dict]) -> str:
+    """「참고 — 산업 밖 주체」는 코드가 쓴다. 표를 옮겨 적는 일이라 모델에 맡길 이유가 없는데,
+    맡기면 틀린다 — 실측(3.5-flash-lite 3회): 공개 건수를 `합계−등록`으로 계산해 13곳을
+    틀렸고(거절·취하가 빠진다), 제목을 "참고 — 참고 — 산업 밖 주체"로 써서 화면 접기가 풀렸다."""
+    lines = []
+    for tc in sorted(_live(tech), key=lambda t: -t.patent_count)[:30]:
+        if tc.status != "excluded":
+            continue
+        s = stats.get(tc.applicant_name) or {}
+        lines.append(f"- {tc.applicant_name} — {s.get('total', tc.patent_count)}건"
+                     f" (등록 {s.get('registered', '?')} · 공개 {s.get('pending', '?')})")
+    return f"{APPENDIX_TITLE}\n\n" + "\n".join(lines) if lines else ""
 
 
 def basis_line(span: tuple[str, str] | None, years: set[int]) -> str:
@@ -490,10 +607,29 @@ def _call(prompt: str) -> str:
             system_instruction=SYSTEM,
             max_output_tokens=MAX_OUTPUT_TOKENS,
             thinking_config=types.ThinkingConfig(
-                thinking_level=types.ThinkingLevel.MINIMAL),
+                thinking_level=types.ThinkingLevel.LOW),
         ),
     )
     return r.text or ""
+
+
+def assemble(db: Session, tech: Technology, results: list[dict]) -> tuple[str, str, str]:
+    """검색 결과 → (프롬프트, 근거 범위 한 줄, 부록). 검색과 분리해 두면 캐시로 재현 실험을 할 수 있다."""
+    names = {tc.applicant_name for tc in _live(tech)
+             if tc.status in ("tracked", "available")}
+    stats = patent_stats(results)                   # 기업 집계는 기간 제한 없이 전체
+    items = select_patents(results, names)          # 초록 재료는 최근분만, 범위도 이걸로 잰다
+    span = date_span(items)
+    company_md, years = _company_section(db, tech, tech_terms(tech, results))
+    prompt = build_prompt(tech, results, company_md,
+                          _applicant_table(db, tech, stats), names, span, years, items)
+    return prompt, basis_line(span, years), appendix(tech, stats)
+
+
+def finish(md: str, tail: str) -> str:
+    """모델 본문 + 코드가 쓴 부록. 지시를 어기고 모델이 부록을 쓴 경우 그 부분은 버린다."""
+    md = _APPENDIX_RE.split(md, maxsplit=1)[0].rstrip()
+    return f"{md}\n\n{tail}" if tail else md
 
 
 async def generate(db: Session, tech: Technology) -> str:
@@ -506,34 +642,24 @@ async def generate(db: Session, tech: Technology) -> str:
     if not keywords:
         raise ValueError("검색 키워드가 없습니다. 먼저 키워드를 설정하십시오.")
 
-    results = []
-    for word in keywords:
-        try:
-            results.append(await patent_search.search(db, word))
-        except Exception as e:
-            # 키워드 하나가 실패해도 나머지로 보고서는 쓸 수 있다. 다만 무엇이 빠졌는지는 남긴다
-            logger.warning("특허 검색 실패, 건너뜀: %r — %s", word, e)
-    if not results:
-        raise ValueError("특허 검색이 모두 실패해 보고서를 만들 수 없습니다.")
+    # 스캔과 같은 IPC 조건으로 검색한다 — 조건이 다르면 화면의 기업 목록과 보고서 표가 어긋난다.
+    # 코어가 없어도 여기서 저장하지 않는다(코어를 정하는 건 스캔이다)
+    try:
+        results, _ = await tech_scan.search_in_core(db, tech, keywords, pages=1)
+    except tech_scan.ScanIncomplete as e:
+        raise ValueError(f"특허 검색이 실패해 보고서를 만들 수 없습니다: {e}") from e
 
-    names = {tc.applicant_name for tc in tech.companies
-             if tc.status in ("tracked", "available")}
-    stats = patent_stats(results)                   # 기업 집계는 기간 제한 없이 전체
-    items = select_patents(results, names)          # 초록 재료는 최근분만, 범위도 이걸로 잰다
-    span = date_span(items)
-    company_md, years = _company_section(db, tech)
-    prompt = build_prompt(tech, results, company_md,
-                          _applicant_table(db, tech, stats), names, span, years, items)
-    logger.info("기술 보고서 프롬프트 %d자 (기술=%s, 근거=%s)",
-                len(prompt), tech.name, basis_line(span, years))
+    prompt, basis, tail = assemble(db, tech, results)
+    logger.info("기술 보고서 프롬프트 %d자 (기술=%s, 근거=%s)", len(prompt), tech.name, basis)
 
     loop = asyncio.get_running_loop()
     md = await loop.run_in_executor(None, partial(_call, prompt))
     if not md.strip():
         raise ValueError("모델이 빈 응답을 반환했습니다.")
 
+    md = finish(md, tail)
     tech.report_md = md
-    tech.report_basis = basis_line(span, years)
+    tech.report_basis = basis
     tech.report_generated_at = datetime.utcnow()
     db.commit()
     return md

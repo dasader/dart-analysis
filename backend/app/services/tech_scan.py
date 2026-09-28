@@ -37,12 +37,38 @@ def get_keywords(tech: Technology) -> list[str]:
         return []
 
 
-async def _search_all(db: Session, keywords: list[str], pages: int) -> list[dict]:
+def get_ipc_core(tech: Technology) -> list[str]:
+    try:
+        return [g for g in json.loads(tech.ipc_core or "[]") if isinstance(g, str)]
+    except json.JSONDecodeError:
+        return []
+
+
+async def search_in_core(db: Session, tech: Technology, keywords: list[str],
+                         pages: int) -> tuple[list[dict], list[str] | None]:
+    """스캔·종합 보고서가 **같은 조건으로** 검색하도록 한 곳에 둔다.
+
+    코어가 저장돼 있으면 그 IPC 안에서만 검색한다. 받은 뒤 거르는 것(`core_only`)과 달리
+    노이즈가 차지하던 자리를 관련 특허가 채운다 — 6개 기술 × 키워드 24개 실측에서
+    사후 거르기는 DART 적합 기업 77·부적합 10곳, 사전 제한은 **84·12곳**이었다.
+    코어가 없으면(키워드를 바꾼 뒤 첫 검색) 제한 없이 검색해 사후로 거르고, 새로 잡은
+    코어를 돌려준다(저장은 호출부가 정한다). 반환: (결과, 새 코어 또는 None)
+    """
+    core = get_ipc_core(tech)
+    results = await _search_all(db, keywords, pages, core or None)
+    if core:
+        return results, None
+    results, found = patent_search.core_only(results)
+    return results, sorted(found)
+
+
+async def _search_all(db: Session, keywords: list[str], pages: int,
+                      ipc: list[str] | None = None) -> list[dict]:
     """모든 키워드를 검색한다. 하나라도 한도로 막히면 전체를 무효로 본다."""
     results = []
     for word in keywords:
         try:
-            results.append(await patent_search.search(db, word, pages=pages))
+            results.append(await patent_search.search(db, word, pages=pages, ipc=ipc))
         except api_usage.QuotaExceeded as e:
             # 남은 키워드를 못 돌면 결과가 편향된다 — 부분 저장하지 않는다
             raise ScanIncomplete(f"KIPRIS 한도로 스캔을 중단했습니다: {e}") from e
@@ -93,9 +119,10 @@ async def scan(db: Session, tech: Technology, pages: int = PAGES, top: int | Non
     if not keywords:
         raise ScanIncomplete("검색 키워드가 없습니다. 기술을 먼저 저장하세요.")
 
-    results = await _search_all(db, keywords, pages)
-    applicants, kw_hits = patent_search.aggregate_applicants(results)
-    matched = patent_search.match_companies(db, applicants, limit=top, keywords=kw_hits)
+    results, new_core = await search_in_core(db, tech, keywords, pages)
+    applicants, kw_hits, patents = patent_search.aggregate_applicants(results)
+    matched = patent_search.match_companies(db, applicants, limit=top, keywords=kw_hits,
+                                            patents=patents)
 
     searched = [{"word": r["word"], "total": r["total"],
                  "broad": r["total"] > patent_search.BROAD_THRESHOLD} for r in results]
@@ -104,11 +131,15 @@ async def scan(db: Session, tech: Technology, pages: int = PAGES, top: int | Non
     stats = _merge(db, tech, matched, now)
     tech.last_scanned_at = now
     tech.keyword_stats = json.dumps(searched, ensure_ascii=False)
+    if new_core:
+        tech.ipc_core = json.dumps(new_core, ensure_ascii=False)
     db.commit()
 
     onboarded = None
     if onboard:
-        targets = _onboard_targets(db, matched)
+        targets = await tech_pipeline.order_candidates(
+            tech.name, tech.description, _onboard_targets(db, matched), patents,
+            tech.max_companies)
         if targets:
             onboarded = await tech_pipeline.onboard(db, targets, tech.max_companies)
             # 등록된 기업은 tracked로 승격된다 — 다음 스캔을 기다리지 않고 바로 반영
@@ -146,9 +177,11 @@ def _onboard_targets(db: Session, matched: dict) -> list[dict]:
 
     `onboard`는 앞에서부터 max_companies개를 자르므로 **순서가 곧 우선순위다.**
     그냥 이어붙이면 특허 3건짜리 미등록 기업이 16건짜리 기존 기업보다 먼저 간다.
+    순서 기준은 `tech_pipeline.rank`(최근 출원 건수 → 누적 건수)이고, 후보가 상한보다
+    많으면 `order_candidates`가 적합도 판정을 앞에 붙인다.
     """
-    targets = matched["available"] + _tracked_without_report(db, matched["tracked"])
-    return sorted(targets, key=lambda x: -x["patents"])
+    return tech_pipeline.rank(matched["available"]
+                              + _tracked_without_report(db, matched["tracked"]))
 
 
 def _promote(db: Session, tech: Technology, onboarded: dict) -> None:

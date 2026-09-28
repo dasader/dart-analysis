@@ -422,6 +422,71 @@ def test_onboard_targets_are_ordered_by_patent_count(db):
     assert [x["applicant"] for x in picked[:3]] == ["엘지에너지솔루션", "기아", "포스코홀딩스"]
 
 
+def test_onboard_order_prefers_recent_patents():
+    """누적 건수가 많아도 옛 특허뿐이면 뒤로 간다(실측: 연료전지에서 사업을 접은 기업들)."""
+    from app.services import tech_pipeline
+
+    cands = [{"applicant": "옛강자", "patents": 36, "recent": 0},
+             {"applicant": "현역", "patents": 7, "recent": 7}]
+    assert [x["applicant"] for x in tech_pipeline.rank(cands)] == ["현역", "옛강자"]
+
+
+def test_onboard_order_puts_unrelated_last_but_keeps_it():
+    """낱말만 겹친 기업(실측: 레독스 흐름전지 HLB제약)은 맨 뒤로 — 버리지는 않는다."""
+    from app.services import tech_pipeline
+
+    cands = [{"applicant": "흐름전지", "patents": 7, "recent": 7, "role": "unrelated"},
+             {"applicant": "장비", "patents": 5, "recent": 5, "role": "peripheral"},
+             {"applicant": "소재", "patents": 3, "recent": 3, "role": "core"}]
+    assert [x["applicant"] for x in tech_pipeline.rank(cands)] == ["소재", "장비", "흐름전지"]
+
+
+@pytest.mark.parametrize("cap", [0, 3])
+def test_fit_judge_skipped_when_everyone_fits(monkeypatch, cap):
+    """상한이 0(전체)이거나 후보가 상한 이하면 순서가 무의미하다 — LLM을 부르지 않는다."""
+    import asyncio
+
+    from app.services import tech_pipeline
+
+    def boom(*a):
+        raise AssertionError("호출되면 안 된다")
+    monkeypatch.setattr(tech_pipeline, "_judge_sync", boom)
+    cands = [{"applicant": f"기업{i}", "corp_name": f"기업{i}", "patents": i} for i in range(3)]
+    out = asyncio.run(tech_pipeline.order_candidates("기술", "설명", cands, {}, cap))
+    assert [x["applicant"] for x in out] == ["기업2", "기업1", "기업0"]
+
+
+def test_fit_judge_failure_falls_back_to_recent_order(monkeypatch):
+    """판정이 실패해도 온보딩을 막지 않는다."""
+    import asyncio
+
+    from app.services import tech_pipeline
+
+    def fail(*a):
+        raise RuntimeError("API 오류")
+    monkeypatch.setattr(tech_pipeline, "_judge_sync", fail)
+    cands = [{"applicant": "옛", "corp_name": "옛", "patents": 9, "recent": 0},
+             {"applicant": "새", "corp_name": "새", "patents": 2, "recent": 2}]
+    out = asyncio.run(tech_pipeline.order_candidates("기술", "설명", cands, {}, 1))
+    assert [x["applicant"] for x in out] == ["새", "옛"]
+
+
+def test_fit_judge_reorders_by_role(monkeypatch):
+    """판정은 corp_name으로 돌아온다 — 출원인명과 달라도 붙어야 한다."""
+    import asyncio
+
+    from app.services import tech_pipeline
+
+    monkeypatch.setattr(tech_pipeline, "_judge_sync", lambda *a: {
+        "HLB제약": {"corp": "HLB제약", "role": "unrelated", "reason": "흐름전지"},
+        "솔브레인": {"corp": "솔브레인", "role": "core", "reason": "고체전해질"}})
+    cands = [{"applicant": "에이치엘비제약", "corp_name": "HLB제약", "patents": 7, "recent": 7},
+             {"applicant": "솔브레인 주식회사", "corp_name": "솔브레인", "patents": 3, "recent": 3}]
+    out = asyncio.run(tech_pipeline.order_candidates("전고체", "설명", cands, {}, 1))
+    assert [x["corp_name"] for x in out] == ["솔브레인", "HLB제약"]
+    assert out[0]["reason"] == "고체전해질"
+
+
 def test_promote_fills_company_id(db, tech):
     """status만 tracked로 바꾸고 company_id를 빠뜨리면 겉보기엔 멀쩡한데
     기업 상세 링크도, 사업보고서 근거도 조용히 사라진다."""
@@ -440,3 +505,138 @@ def test_promote_fills_company_id(db, tech):
     tc = db.query(TechCompany).filter(TechCompany.applicant_name == "다전자주식회사").one()
     assert tc.status == "tracked"
     assert tc.company_id == co.id
+
+
+def test_tech_terms_keeps_only_patent_vocabulary(db, tech):
+    """'배터리'는 기술명에 있지만 특허는 거의 안 쓰고 사업보고서엔 흔하다(삼성전자 청소기 배터리).
+    걸리면 전고체와 무관한 기업이 '직접 언급'을 얻는다."""
+    items = [patent("가", app_no=str(i), title="황화물계 고체전해질", abstract="전고체 전지")
+             for i in range(30)] + [patent("나", app_no="x", title="배터리 팩")]
+    terms = tech_report.tech_terms(tech, [{"items": items}])
+    assert "배터리" not in terms
+    assert "전고체" in terms and "고체전해질" in terms
+
+
+def test_gone_applicants_are_left_out(db, tech):
+    """키워드를 바꾸기 전에만 걸렸던 기업(이탈)이 보고서에 남으면 안 된다(실측: 전고체 보고서의 HLB제약)."""
+    now = datetime(2026, 9, 1)
+    tech.last_scanned_at = now
+    db.add_all([
+        TechCompany(technology_id=tech.id, applicant_name="현재", patent_count=3,
+                    status="excluded", keyword_hits="[]", last_seen_at=now),
+        TechCompany(technology_id=tech.id, applicant_name="이탈", patent_count=9,
+                    status="excluded", keyword_hits="[]", last_seen_at=datetime(2026, 8, 1)),
+    ])
+    db.commit()
+    db.refresh(tech)
+    table = tech_report._applicant_table(db, tech)
+    assert "현재" in table and "이탈" not in table
+
+
+def test_source_mentions_fold_duplicates(db, tech, monkeypatch):
+    """원문에 같은 문장이 두 번 실리면(임원 보수 사유 등) 칸만 먹는다 — 사업화 신호가 밀려난다."""
+    block = "x" * 150 + "반복 문장 전고체 사업. " + "x" * 150
+    body = block * 2 + "BMW와 전고체 배터리 실증 프로젝트 업무협약"
+    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: body)
+    hits = tech_report._mentions_in_source(Report(id=1, file_path="f"), ["전고체"])
+    assert len(hits) == 2
+    assert any("실증 프로젝트" in h for h in hits)
+
+
+def test_company_section_fixes_stage_in_table_skeleton(db, tech):
+    """행·링크·'언급 없음 → 관심·검토'는 코드가 정한다. 모델에 맡기면 행을 빠뜨렸다."""
+    co = Company(corp_code="00000021", corp_name="가완성차")
+    db.add(co)
+    db.commit()
+    r = Report(company_id=co.id, rcept_no="R21", report_name="사업보고서",
+               report_type="annual", fiscal_year=2025)
+    db.add(r)
+    db.commit()
+    db.add(Analysis(company_id=co.id, report_id=r.id, analysis_type="rnd",
+                    status=AnalysisStatus.COMPLETED, result_summary="수소 소재 개발"))
+    db.add(TechCompany(technology_id=tech.id, company_id=co.id, applicant_name="가완성차",
+                       corp_name="가완성차", patent_count=20, status="tracked",
+                       keyword_hits="[]"))
+    db.commit()
+    db.refresh(tech)
+
+    section, _ = tech_report._company_section(db, tech)
+    assert (f"| 가완성차 | 관심·검토 | 사업보고서에 언급 없음 | "
+            f"[2025년 사업보고서](/companies/{co.id}/reports/{r.id}) |") in section
+
+
+def test_appendix_is_written_by_code(db, tech):
+    """모델은 공개 건수를 합계−등록으로 계산해 틀렸고 제목을 두 번 썼다. 부록은 코드가 쓴다."""
+    db.add(TechCompany(technology_id=tech.id, applicant_name="가대학교", patent_count=30,
+                       status="excluded", keyword_hits="[]"))
+    db.commit()
+    db.refresh(tech)
+    tail = tech_report.appendix(tech, {"가대학교": {"total": 30, "registered": 9, "pending": 13}})
+    assert tail.startswith(tech_report.APPENDIX_TITLE)
+    assert "- 가대학교 — 30건 (등록 9 · 공개 13)" in tail
+
+    md = tech_report.finish("## 요약\n본문\n\n## 참고 — 참고 — 산업 밖 주체\n- 가대학교 (30건)", tail)
+    assert md.count("산업 밖 주체") == 1 and md.endswith("공개 13)")
+
+
+RND_MD = ("## 요약\nR&D 요약\n\n## 기술 사업화 동향\n| 유형 | 내용 |\n|---|---|\n"
+          "| 지분투자 | 프롤로지움 지분 투자 |\n\n## 연구개발비 추이\n" + "비용 " * 2000)
+
+
+def test_rnd_excerpt_takes_sections_by_heading():
+    """사업화 동향은 앞 N자가 아니라 제목으로 잘라 싣는다 — 3.8에서 길어져 3,000자에서 잘렸다."""
+    padded = RND_MD.replace("R&D 요약", "R&D 요약\n" + "가" * 3500)  # 앞 N자로는 사업화 동향이 안 실린다
+    assert "프롤로지움" not in padded[:tech_report.MAX_ANALYSIS_CHARS]
+    out = tech_report._analysis_excerpt(Analysis(analysis_type="rnd", result_summary=padded))
+    assert "프롤로지움 지분 투자" in out
+    assert out.startswith("## 요약")
+    assert "연구개발비 추이" not in out and "비용" not in out
+
+
+def test_rnd_excerpt_falls_back_without_section():
+    """절이 없는 옛 결과와 national_tech는 지금처럼 앞 N자."""
+    old = "## 요약\n옛 결과\n" + "나" * 5000
+    for typ in ("rnd", "national_tech"):
+        out = tech_report._analysis_excerpt(Analysis(analysis_type=typ, result_summary=old))
+        assert out == old[:tech_report.MAX_ANALYSIS_CHARS]
+    nt = tech_report._analysis_excerpt(Analysis(analysis_type="national_tech", result_summary=RND_MD))
+    assert nt == RND_MD[:tech_report.MAX_ANALYSIS_CHARS]
+
+
+def test_rnd_excerpt_caps_section_on_line_boundary():
+    """절이 폭주해도 상한에서 줄 단위로 자른다 — 표 행이 반쪽 나지 않게."""
+    rows = "".join(f"| MOU | 협약 {i:04d} |\n" for i in range(2000))
+    md = f"## 요약\n요약\n\n## 기술 사업화 동향\n{rows}\n## 시사점\n끝"
+    out = tech_report._analysis_excerpt(Analysis(analysis_type="rnd", result_summary=md))
+    sec = out[out.index("## 기술 사업화 동향"):]
+    assert len(sec) <= tech_report.RND_SECTIONS["기술 사업화 동향"] + len("\n…(이하 생략)")
+    assert sec.endswith("…(이하 생략)")
+    assert all(line.endswith("|") for line in sec.splitlines()[1:-1])
+    assert "시사점" not in out
+
+
+def test_analysis_mention_needs_term_in_source(db, tech, monkeypatch):
+    """분석이 원문에 없는 기술 용어를 덧붙이면 근거가 아니다 — 현대차 사례: 원문 '전고체' 0회인데
+    분석이 지분 투자를 '전고체 배터리 상용화 대비'로 풀어 써서 `사업계획`이 됐다."""
+    co = Company(corp_code="00000031", corp_name="가완성차")
+    db.add(co)
+    db.commit()
+    r = Report(company_id=co.id, rcept_no="R31", report_name="사업보고서",
+               report_type="annual", fiscal_year=2025, file_path="f")
+    db.add(r)
+    db.commit()
+    db.add(Analysis(company_id=co.id, report_id=r.id, analysis_type="rnd",
+                    status=AnalysisStatus.COMPLETED,
+                    result_summary="Factorial 지분 투자로 전고체 배터리 상용화 경쟁에 대비합니다."))
+    db.add(TechCompany(technology_id=tech.id, company_id=co.id, applicant_name="가완성차",
+                       corp_name="가완성차", patent_count=20, status="tracked", keyword_hits="[]"))
+    db.commit()
+    db.refresh(tech)
+    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: "Factorial 지분 1.76% 보유")
+    md, _ = tech_report._company_section(db, tech, ["전고체"])
+    assert "| 가완성차 | 관심·검토 |" in md
+
+    # 원문에 용어가 있으면 분석 문장도 근거로 받는다
+    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: "전고체 배터리 개발")
+    md, _ = tech_report._company_section(db, tech, ["전고체"])
+    assert "| 가완성차 | ? |" in md
