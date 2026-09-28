@@ -253,16 +253,20 @@ def mention_sentences(text: str, terms: list[str], limit: int = 4) -> list[str]:
     return out
 
 
-def _mentions_in_source(report: Report, terms: list[str], limit: int = 5) -> list[str]:
-    """사업보고서 원문에서 기술 용어가 나온 대목. 읽기 실패는 조용히 넘긴다
-    (보고서 생성이 원문 파싱 때문에 통째로 죽으면 안 된다)."""
-    if limit <= 0 or not report.file_path:
-        return []
+def _source_text(report: Report) -> str | None:
+    """사업보고서 원문. 읽기 실패는 None — 보고서 생성이 원문 파싱 때문에 통째로 죽으면 안 된다."""
+    if not report.file_path:
+        return None
     try:
-        body = extract_text_from_report(report.file_path)
+        return extract_text_from_report(report.file_path) or None
     except Exception:
         logger.warning("원문 읽기 실패, 건너뜀: report_id=%s", report.id)
-        return []
+        return None
+
+
+def _mentions_in_source(report: Report, terms: list[str], limit: int = 5) -> list[str]:
+    """사업보고서 원문에서 기술 용어가 나온 대목."""
+    body = _source_text(report) if limit > 0 else None
     if not body:
         return []
 
@@ -364,7 +368,13 @@ def _company_section(db: Session, tech: Technology,
         # 원문을 보지 않았는데, 사업화 신호는 대개 원문에만 있다(실측: 삼성SDI의
         # "BMW와 전고체 배터리 실증 프로젝트 업무협약"·"ASB 사업화 추진팀 신설"이
         # 한 번도 프롬프트에 실리지 않아 단계가 회차마다 흔들렸다)
-        hits = mention_sentences(joined, terms, limit=3)
+        # 분석 결과에는 모델의 해석이 섞인다. **원문에 없는 기술 용어는 근거로 받지 않는다.**
+        # 실측: 현대자동차 원문에 '전고체'가 0회인데 3.8-flash 분석이 Solid Power·Factorial 지분
+        # 투자를 "전고체 배터리 상용화 경쟁에 대비"로 풀어 써서, 그 문장이 '직접 언급'으로 잡혀
+        # 4회 모두 `사업계획`이 됐다. 원문을 못 읽으면 예전처럼 분석 결과를 그대로 본다
+        body = _source_text(rows[0][1])
+        seen = [t for t in terms if t in body] if body else terms
+        hits = mention_sentences(joined, seen, limit=3) if seen else []
         hits += _mentions_in_source(rows[0][1], terms)
         if hits:
             parts.append("- **이 기술이 직접 언급된 대목:**\n"

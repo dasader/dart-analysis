@@ -613,3 +613,30 @@ def test_rnd_excerpt_caps_section_on_line_boundary():
     assert sec.endswith("…(이하 생략)")
     assert all(line.endswith("|") for line in sec.splitlines()[1:-1])
     assert "시사점" not in out
+
+
+def test_analysis_mention_needs_term_in_source(db, tech, monkeypatch):
+    """분석이 원문에 없는 기술 용어를 덧붙이면 근거가 아니다 — 현대차 사례: 원문 '전고체' 0회인데
+    분석이 지분 투자를 '전고체 배터리 상용화 대비'로 풀어 써서 `사업계획`이 됐다."""
+    co = Company(corp_code="00000031", corp_name="가완성차")
+    db.add(co)
+    db.commit()
+    r = Report(company_id=co.id, rcept_no="R31", report_name="사업보고서",
+               report_type="annual", fiscal_year=2025, file_path="f")
+    db.add(r)
+    db.commit()
+    db.add(Analysis(company_id=co.id, report_id=r.id, analysis_type="rnd",
+                    status=AnalysisStatus.COMPLETED,
+                    result_summary="Factorial 지분 투자로 전고체 배터리 상용화 경쟁에 대비합니다."))
+    db.add(TechCompany(technology_id=tech.id, company_id=co.id, applicant_name="가완성차",
+                       corp_name="가완성차", patent_count=20, status="tracked", keyword_hits="[]"))
+    db.commit()
+    db.refresh(tech)
+    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: "Factorial 지분 1.76% 보유")
+    md, _ = tech_report._company_section(db, tech, ["전고체"])
+    assert "| 가완성차 | 관심·검토 |" in md
+
+    # 원문에 용어가 있으면 분석 문장도 근거로 받는다
+    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: "전고체 배터리 개발")
+    md, _ = tech_report._company_section(db, tech, ["전고체"])
+    assert "| 가완성차 | ? |" in md
