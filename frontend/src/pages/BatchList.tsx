@@ -9,6 +9,7 @@ import {
 import { getErrorMessage } from "../lib/errors";
 import AdminButton from "../components/AdminButton";
 import type { BatchJob, ExtractionFailure, QueueStatus } from "../types";
+import { usePolling } from "../hooks/usePolling";
 
 /** JOB_STATE_* → 한글 라벨 + 배지 색 */
 const STATE_LABEL: Record<string, { text: string; cls: string }> = {
@@ -53,12 +54,12 @@ export default function BatchList() {
       .catch((e) => setError(getErrorMessage(e)))
       .finally(() => setLoading(false));
 
-  // 진행 중인 작업이 있으면 주기적으로 갱신 (batch turnaround는 분 단위)
+  // 15초마다 갱신한다(batch turnaround는 분 단위). 한가할 때도 도는 건 다른 곳에서
+  // 새로 제출한 작업이 이 화면에 저절로 나타나게 하기 위해서다
   useEffect(() => {
     load();
-    const timer = setInterval(load, 15000);
-    return () => clearInterval(timer);
   }, []);
+  usePolling(load, 15000);
 
   const handleCancel = async (job: BatchJob) => {
     if (!window.confirm(`이 작업을 취소할까요? (보고서 ${job.report_ids.length}건)`)) return;

@@ -1,10 +1,13 @@
 import json
 import logging
+from collections import Counter, defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import func
+from sqlalchemy.orm import Session, defer
 
 from app.crud import get_or_404
+from app.constants import TechStatus
 from app.database import get_db
 from app.dependencies import require_admin
 from app.models import Technology, TechCompany
@@ -19,20 +22,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/technologies", tags=["technologies"])
 
 
-def _counts(tech: Technology) -> dict:
-    c = {"tracked": 0, "available": 0, "excluded": 0}
-    for tc in tech.companies:
-        if tc.status in c:
-            c[tc.status] += 1
-    return c
+def _counts(tech: Technology) -> Counter:
+    return Counter(tc.status for tc in tech.companies)
 
 
 def _keyword_stats(tech: Technology) -> list[dict]:
     return [r for r in tech_scan.json_list(tech.keyword_stats, dict) if "word" in r]
 
 
-def _to_response(tech: Technology) -> TechnologyResponse:
-    c = _counts(tech)
+def _to_response(tech: Technology, counts: Counter | None = None) -> TechnologyResponse:
+    c = counts if counts is not None else _counts(tech)
     return TechnologyResponse(
         id=tech.id, name=tech.name, description=tech.description,
         keywords=tech_scan.get_keywords(tech), keyword_stats=_keyword_stats(tech),
@@ -40,8 +39,8 @@ def _to_response(tech: Technology) -> TechnologyResponse:
         max_companies=tech.max_companies,
         is_active=tech.is_active, last_scanned_at=tech.last_scanned_at,
         created_at=tech.created_at,
-        tracked_count=c["tracked"], available_count=c["available"],
-        excluded_count=c["excluded"],
+        tracked_count=c[TechStatus.TRACKED], available_count=c[TechStatus.AVAILABLE],
+        excluded_count=c[TechStatus.EXCLUDED],
     )
 
 
@@ -61,18 +60,22 @@ def _company_response(tc: TechCompany, scanned_at) -> TechCompanyResponse:
 
 @router.get("", response_model=list[TechnologyResponse])
 def list_technologies(db: Session = Depends(get_db)):
-    techs = (db.query(Technology)
-             .options(selectinload(Technology.companies))
+    # 목록은 개수만 필요하다 — 기업 행 수백 개와 보고서 본문을 싣지 않고 집계 한 번으로
+    techs = (db.query(Technology).options(defer(Technology.report_md))
              .order_by(Technology.id.desc()).all())
-    return [_to_response(t) for t in techs]
+    counts: dict[int, Counter] = defaultdict(Counter)
+    for tid, status, n in (db.query(TechCompany.technology_id, TechCompany.status, func.count())
+                           .group_by(TechCompany.technology_id, TechCompany.status)):
+        counts[tid][status] = n
+    return [_to_response(t, counts[t.id]) for t in techs]
 
 
 @router.get("/{tech_id}", response_model=TechnologyDetail)
 def get_technology(tech_id: int, db: Session = Depends(get_db)):
     tech = get_or_404(db, Technology, tech_id, "기술을 찾을 수 없습니다.")
     base = _to_response(tech)
-    # 특허 많은 순, 같으면 추적 중인 것부터
-    order = {"tracked": 0, "available": 1, "excluded": 2}
+    # 추적 중 → 등록 가능 → 산업 밖, 그 안에서 특허 많은 순
+    order = {s: i for i, s in enumerate(TechStatus)}
     rows = sorted(tech.companies,
                   key=lambda tc: (order.get(tc.status, 9), -tc.patent_count))
     return TechnologyDetail(

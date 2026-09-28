@@ -65,7 +65,7 @@ def get_queue_info() -> dict:
         return {
             "pending_count": _queue.qsize(),
             "running_batches": len(running),
-            "running_reports": sum(len(json.loads(j.report_ids)) for j in running),
+            "running_reports": sum(len(j.report_id_list) for j in running),
         }
     finally:
         db.close()
@@ -83,7 +83,7 @@ def requeue_orphans() -> int:
         for j in db.query(BatchJob).filter(
             BatchJob.state.notin_(list(batch.TERMINAL_STATES))
         ).all():
-            in_flight.update(json.loads(j.report_ids))
+            in_flight.update(j.report_id_list)
 
         orphans = {
             rid for (rid,) in db.query(Analysis.report_id)

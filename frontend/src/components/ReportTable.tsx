@@ -1,26 +1,27 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { Analysis, Report } from "../types";
+import type { AnalysisState, Report } from "../types";
 import { ANALYSIS_TYPE_KEYS } from "../types";
 import { useSort } from "../hooks/useSort";
 import SortIcon from "./SortIcon";
+import { isInProgress } from "../lib/status";
 import AdminButton from "./AdminButton";
 
 interface Props {
   companyId: number;
   reports: Report[];
   /** 기업의 전체 분석 — 보고서별 진행 상태를 여기서 파생한다 */
-  analyses: Analysis[];
+  analyses: AnalysisState[];
   analyzing?: boolean;
   onAnalyze: (reportId: number) => void;
   onDelete: (reportId: number) => void;
-  onRedownload: (reportId: number) => void;
+  onRedownload: (reportId: number) => Promise<void> | void;
 }
 
 /** 보고서 1건의 분석 3종을 한 줄 상태로 접는다. */
-function analysisSummary(analyses: Analysis[]) {
+function analysisSummary(analyses: AnalysisState[]) {
   if (analyses.length === 0) return { text: "—", cls: "text-text-tertiary", icon: "" };
-  if (analyses.some((a) => a.status === "running" || a.status === "pending"))
+  if (analyses.some(isInProgress))
     return { text: "처리중", cls: "text-warning", icon: "◐" };
   if (analyses.some((a) => a.status === "failed"))
     return { text: "실패", cls: "text-danger", icon: "●" };
@@ -38,7 +39,7 @@ export default function ReportTable({ companyId, reports, analyses, analyzing = 
   const { sortKey, sortDir, toggleSort, compare } = useSort<SortKey>("fiscal_year", "desc");
 
   const byReport = useMemo(() => {
-    const m = new Map<number, Analysis[]>();
+    const m = new Map<number, AnalysisState[]>();
     for (const a of analyses) {
       const list = m.get(a.report_id);
       if (list) list.push(a);

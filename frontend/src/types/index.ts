@@ -76,6 +76,9 @@ export interface Analysis {
   updated_at: string;
 }
 
+/** 진행 상태만 — 기업 상세 폴링 응답(`/companies/{id}/analyses`). 본문은 싣지 않는다. */
+export type AnalysisState = Pick<Analysis, "id" | "report_id" | "analysis_type" | "status" | "updated_at">;
+
 export interface SchedulerStatus {
   is_running: boolean;
   next_run_time: string | null;
@@ -115,6 +118,10 @@ export interface QueueStatus {
   running_reports: number;
 }
 
+/** 백엔드 `constants.TechStatus`와 같은 값·순서(화면 섹션 순서). */
+export const TECH_STATUSES = ["tracked", "available", "excluded"] as const;
+export type TechStatus = (typeof TECH_STATUSES)[number];
+
 export interface TechCompany {
   id: number;
   company_id: number | null;
@@ -123,7 +130,7 @@ export interface TechCompany {
   applicant_name: string;
   patent_count: number;
   keyword_hits: string[];
-  status: "tracked" | "available" | "excluded";
+  status: TechStatus;
   exclude_reason: string | null;
   first_seen_at: string | null;
   last_seen_at: string | null;

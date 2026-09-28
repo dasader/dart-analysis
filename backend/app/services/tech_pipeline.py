@@ -152,7 +152,6 @@ async def ensure_latest_report(db: Session, company: Company, year: int | None =
         return have
 
 
-
 async def onboard(db: Session, candidates: list[dict], max_companies: int,
                   year: int | None = None) -> dict:
     """미등록 후보를 등록하고 보고서를 확보한 뒤 분석 큐에 넣는다.

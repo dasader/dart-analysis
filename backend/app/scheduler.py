@@ -67,7 +67,6 @@ async def check_and_download_reports():
         db.close()
 
 
-
 async def scan_technologies():
     """활성 기술의 특허를 재검색해 새 기업을 찾는다.
 

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Date, Text,
@@ -98,6 +99,10 @@ class BatchJob(Base):
     error_message = Column(Text, nullable=True)
     submitted_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
+
+    @property
+    def report_id_list(self) -> list[int]:
+        return json.loads(self.report_ids)
 
 
 class PromptTemplate(Base):

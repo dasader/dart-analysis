@@ -1,4 +1,3 @@
-import json
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -21,7 +20,7 @@ def _to_response(job: BatchJob) -> BatchJobResponse:
         model_name=job.model_name,
         thinking_level=job.thinking_level,
         state=job.state,
-        report_ids=json.loads(job.report_ids),
+        report_ids=job.report_id_list,
         request_count=job.request_count,
         success_count=job.success_count,
         failed_count=job.failed_count,

@@ -5,6 +5,7 @@ import type {
   CompanySearchResult,
   Report,
   Analysis,
+  AnalysisState,
   SchedulerStatus,
   BatchJob,
   QueueStatus,
@@ -116,7 +117,7 @@ export function redownloadReport(reportId: number): Promise<Report> {
 
 // --- Analyses ---
 
-export function fetchCompanyAnalyses(companyId: number): Promise<Analysis[]> {
+export function fetchCompanyAnalyses(companyId: number): Promise<AnalysisState[]> {
   return request(`/companies/${companyId}/analyses`);
 }
 

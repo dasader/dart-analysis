@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
 import { fetchPrompts, updatePrompt } from "../api/client";
 import { getErrorMessage } from "../lib/errors";
-import AdminButton from "../components/AdminButton";
+import AdminButton, { AdminNotice } from "../components/AdminButton";
 import SettingToggles from "../components/SettingToggles";
 import BackupPanel from "../components/BackupPanel";
-import { useAdmin } from "../context/AdminContext";
 import type { PromptTemplate } from "../types";
 
 export default function PromptSettings() {
-  const { isAdmin } = useAdmin();
   const [prompts, setPrompts] = useState<PromptTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -35,6 +33,13 @@ export default function PromptSettings() {
       .finally(() => setLoading(false));
   }, []);
 
+  // 저장 표시는 2초 뒤 지운다 — 연달아 저장해도 앞 타이머가 새 표시를 일찍 지우지 않게 effect로
+  useEffect(() => {
+    if (!saved) return;
+    const t = setTimeout(() => setSaved(null), 2000);
+    return () => clearTimeout(t);
+  }, [saved]);
+
   const handleSave = async (analysisType: string) => {
     const edit = edits[analysisType];
     if (!edit) return;
@@ -43,7 +48,6 @@ export default function PromptSettings() {
     try {
       await updatePrompt(analysisType, edit);
       setSaved(analysisType);
-      setTimeout(() => setSaved(null), 2000);
     } catch (e) {
       alert(getErrorMessage(e));
     } finally {
@@ -66,11 +70,7 @@ export default function PromptSettings() {
         </p>
       </div>
 
-      {!isAdmin && (
-        <div className="mb-6 rounded-lg border border-warning/40 bg-warning-bg px-4 py-3 text-sm text-warning">
-          관리 기능을 사용하려면 우측 상단에서 관리자 로그인이 필요합니다.
-        </div>
-      )}
+      <AdminNotice />
 
       <SettingToggles />
 

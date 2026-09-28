@@ -1,13 +1,13 @@
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session, defer, load_only
 
 from app.constants import ANALYSIS_TYPES
 from app.crud import get_or_404
 from app.database import get_db
 from app.models import Company, Report, Analysis
-from app.schemas import AnalysisRequest, AnalysisResponse, QueueStatus
+from app.schemas import AnalysisRequest, AnalysisResponse, AnalysisState, QueueStatus
 from app.services import analysis_service as svc
 from app.services.analysis_queue import enqueue, get_queue_info, queue_report
 from app.dependencies import require_admin
@@ -33,9 +33,8 @@ def analyze_report(
     report = _downloaded_report(db, report_id)
 
     q = db.query(Analysis).filter_by(report_id=report.id, analysis_type=body.analysis_type)
-    existing = q.first()
-    svc.mark_pending(db, report, {body.analysis_type: existing} if existing else {},
-                     [body.analysis_type], skip_completed=False)
+    svc.mark_pending(db, report, {a.analysis_type: a for a in q}, [body.analysis_type],
+                     skip_completed=False)
     db.commit()
     enqueue(report.id)  # report_id 기반 큐 — worker가 pending 항목 일괄 처리
     return AnalysisResponse.model_validate(q.one())
@@ -101,15 +100,16 @@ def get_analysis(analysis_id: int, db: Session = Depends(get_db)):
     return AnalysisResponse.model_validate(analysis)
 
 
-@router.get("/api/companies/{company_id}/analyses", response_model=list[AnalysisResponse])
+@router.get("/api/companies/{company_id}/analyses", response_model=list[AnalysisState])
 def get_company_analyses(company_id: int, db: Session = Depends(get_db)):
-    analyses = (
+    return (
         db.query(Analysis)
+        .options(load_only(Analysis.id, Analysis.report_id, Analysis.analysis_type,
+                           Analysis.status, Analysis.updated_at))
         .filter(Analysis.company_id == company_id)
         .order_by(Analysis.report_id.desc(), Analysis.analysis_type)
         .all()
     )
-    return [AnalysisResponse.model_validate(a) for a in analyses]
 
 
 @router.get("/api/queue/status", response_model=QueueStatus)

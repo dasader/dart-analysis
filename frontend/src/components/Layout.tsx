@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, Outlet } from "react-router-dom";
 import { fetchExtractionFailures, fetchSchedulerStatus } from "../api/client";
 import type { SchedulerStatus } from "../types";
 import { useAdmin } from "../context/AdminContext";
+import { usePolling } from "../hooks/usePolling";
 
 export default function Layout() {
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
@@ -14,15 +15,14 @@ export default function Layout() {
   }, []);
 
   // 구역 추출 실패는 보고서 서식 변경 신호 — 어느 화면에 있든 눈에 띄어야 한다
+  const checkFailures = useCallback(
+    () => fetchExtractionFailures().then((f) => setFailureCount(f.length)),
+    [],
+  );
   useEffect(() => {
-    const check = () =>
-      fetchExtractionFailures()
-        .then((f) => setFailureCount(f.length))
-        .catch(() => {});
-    check();
-    const timer = setInterval(check, 60000);
-    return () => clearInterval(timer);
-  }, []);
+    checkFailures().catch(() => {});
+  }, [checkFailures]);
+  usePolling(checkFailures, 60000);
 
   const { isAdmin, login, logout } = useAdmin();
 

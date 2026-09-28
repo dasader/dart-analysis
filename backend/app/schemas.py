@@ -84,6 +84,17 @@ class ReportResponse(BaseModel):
 class AnalysisRequest(BaseModel):
     analysis_type: AnalysisType
 
+class AnalysisState(BaseModel):
+    """분석 진행 상태만 — 기업 상세의 10초 폴링용. 본문(result_summary)은 수십 KB라 싣지 않는다."""
+    id: int
+    report_id: int
+    analysis_type: str
+    status: str
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class AnalysisResponse(BaseModel):
     id: int
     company_id: int

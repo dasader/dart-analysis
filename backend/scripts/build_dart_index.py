@@ -29,7 +29,6 @@ from app.migrate import run as run_migrations
 from app.models import DartCorp
 
 
-
 def load_corp_list(db) -> int:
     """corpCode.xml을 색인에 반영. 이미 있는 기업의 법인번호는 보존한다."""
     url = f"{DART_BASE}/corpCode.xml"

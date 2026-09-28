@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 import xml.etree.ElementTree as ET
 
 from app.config import settings
+from app.constants import TechStatus
 from app.models import ApplicantCorp, Company, DartCorp
 from app.services import api_usage
 
@@ -31,7 +32,7 @@ PROVIDER = "kipris"
 # 버리지 않고 **몇 개 키워드에서 나왔는지**를 함께 보여 구분하게 한다.
 BROAD_THRESHOLD = 20_000
 
-# 온보딩 순서는 **최근 N년 출원 건수**로 가른다(tech_report.MAX_PATENT_AGE_YEARS와 같은 기준).
+# 온보딩 순서는 **최근 N년 출원 건수**로 가른다(tech_report도 초록 재료의 연령 컷에 이 값을 쓴다).
 # 누적 건수로 세면 사업을 접은 기업이 옛 특허로 올라온다 — 실측(수소 연료전지):
 # 현대하이스코(2006~2013, 현대제철에 합병)·삼성SDI(2003~2011)·LG화학·삼성전자가
 # 상위 10에 들어 P@10이 6/10이었는데, 최근 10년 건수로 세자 9/10이 됐다.
@@ -252,7 +253,7 @@ def match_companies(db: Session, applicants: Counter, keywords: dict[str, set[st
     """
     names = [n for n, _ in applicants.most_common(limit)]
     if not names:
-        return {"tracked": [], "available": [], "excluded": []}
+        return {s: [] for s in TechStatus}
 
     # 출원인명 → 법인번호
     by_name: dict[str, str] = {}
@@ -272,7 +273,6 @@ def match_companies(db: Session, applicants: Counter, keywords: dict[str, set[st
         jurir = by_name.get(name)
         base = {"applicant": name, "patents": cnt, "jurir_no": jurir,
                 "keywords": sorted(keywords.get(name, [])),
-                # 특허 목록을 안 주면 누적 건수로 대신한다(예전 순서 그대로)
                 "recent": count_recent(patents.get(name, []))}
 
         if jurir and jurir in tracked_by_jurir:
@@ -287,4 +287,5 @@ def match_companies(db: Session, applicants: Counter, keywords: dict[str, set[st
             excluded.append({**base, "reason":
                              "DART 색인에 없음(비상장·미수집)" if jurir
                              else "법인번호 없음(개인·대학·연구소·외국)"})
-    return {"tracked": tracked, "available": available, "excluded": excluded}
+    return {TechStatus.TRACKED: tracked, TechStatus.AVAILABLE: available,
+            TechStatus.EXCLUDED: excluded}

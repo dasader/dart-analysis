@@ -46,7 +46,7 @@ def _distribute(db: Session, job: BatchJob, lines: list[str]) -> tuple[int, int]
             ok += 1
 
     # 결과 줄이 아예 오지 않은 보고서 — 원인 불명이므로 실패로 남긴다
-    for report_id in set(json.loads(job.report_ids)) - seen:
+    for report_id in set(job.report_id_list) - seen:
         running = svc.get_by_status(db, report_id, AnalysisStatus.RUNNING)
         if running:
             svc.mark_failed(db, running, "batch 결과에 해당 요청의 응답이 없습니다.")
@@ -105,7 +105,7 @@ async def poll_batches() -> None:
 
 
 def _fail_all(db: Session, job: BatchJob, message: str) -> None:
-    report_ids = json.loads(job.report_ids)
+    report_ids = job.report_id_list
     for report_id in report_ids:
         running = svc.get_by_status(db, report_id, AnalysisStatus.RUNNING)
         if running:

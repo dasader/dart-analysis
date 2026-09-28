@@ -7,6 +7,7 @@ import TagChip from "../components/TagChip";
 import AdminButton from "../components/AdminButton";
 import { useSort } from "../hooks/useSort";
 import SortIcon from "../components/SortIcon";
+import { getErrorMessage } from "../lib/errors";
 import type { Company, Tag } from "../types";
 
 type SortKey = "corp_name" | "corp_code" | "report_count" | "latest_analysis_date";
@@ -47,9 +48,9 @@ export default function CompanyList() {
     latest_analysis_date: (c) => c.latest_analysis_date ?? "",
   };
 
+  const q = search.toLowerCase();
   const filtered = companies
     .filter((c) => {
-      const q = search.toLowerCase();
       const matchesSearch =
         c.corp_name.toLowerCase().includes(q) || c.corp_code.toLowerCase().includes(q);
       const matchesTags =
@@ -60,8 +61,12 @@ export default function CompanyList() {
 
   const handleDelete = async (c: Company) => {
     if (!confirm(`"${c.corp_name}"을(를) 삭제하시겠습니까?\n관련 보고서와 분석 데이터가 모두 삭제됩니다.`)) return;
-    await deleteCompany(c.id);
-    load();
+    try {
+      await deleteCompany(c.id);
+      load();
+    } catch (e) {
+      alert(getErrorMessage(e));
+    }
   };
 
   // 상태 → 뱃지 텍스트·색상 (마크업은 1곳으로 통일)

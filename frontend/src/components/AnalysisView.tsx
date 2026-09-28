@@ -1,6 +1,7 @@
 import AdminButton from "./AdminButton";
 import Markdown from "./Markdown";
 import type { Analysis } from "../types";
+import { isInProgress } from "../lib/status";
 
 interface Props {
   /** 이 보고서·이 유형의 분석. 아직 요청된 적 없으면 undefined */
@@ -29,7 +30,7 @@ export default function AnalysisView({ analysis, onRun, running }: Props) {
     );
   }
 
-  if (analysis && (analysis.status === "pending" || analysis.status === "running")) {
+  if (analysis && isInProgress(analysis)) {
     return (
       <div className="flex flex-col items-center rounded-xl border border-border bg-surface py-16">
         <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent" />

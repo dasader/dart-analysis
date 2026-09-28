@@ -82,10 +82,12 @@ test('기술: 목록 렌더 + 등록은 관리자만', async ({ page }) => {
     json: [{ id: 1, name: '전고체 배터리', description: '설명', keywords: ['황화물계 고체전해질'],
              max_companies: 3, is_active: true, last_scanned_at: '2026-08-15T00:00:00',
              created_at: '2026-08-15T00:00:00',
-             tracked_count: 3, available_count: 6, excluded_count: 21 }] }))
+             tracked_count: 3, available_count: 6, excluded_count: 21,
+             keyword_stats: [], ipc_core: [] }] }))
 
   await page.goto('/')
-  await page.getByRole('link', { name: '기술', exact: true }).click()
+  // 기업 목록 본문에도 '기술' 링크가 있어 상단 메뉴로 좁힌다
+  await page.getByRole('banner').getByRole('link', { name: '기술', exact: true }).click()
   await expect(page).toHaveURL(/\/technologies$/)
   await expect(page.getByRole('link', { name: '전고체 배터리' })).toBeVisible()
   // 미로그인 상태에서는 등록이 잠긴다
@@ -106,6 +108,7 @@ test('기술 상세: 상태별로 나눠 보여준다', async ({ page }) => {
       keywords: ['황화물계 고체전해질'], max_companies: 3, is_active: true,
       last_scanned_at: '2026-08-15T00:00:00', created_at: '2026-08-15T00:00:00',
       tracked_count: 1, available_count: 1, excluded_count: 1,
+      keyword_stats: [], ipc_core: [],
       companies: [
         company({ id: 1, company_id: 7, corp_name: 'LG화학',
                   applicant_name: '주식회사 엘지화학', patents: 16, kws: ['a', 'b'],

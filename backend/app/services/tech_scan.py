@@ -13,6 +13,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.constants import TechStatus
 from app.models import Report, Technology, TechCompany
 from app.services import api_usage, patent_search, tech_pipeline
 
@@ -88,9 +89,7 @@ def _merge(db: Session, tech: Technology, matched: dict, now: datetime) -> dict:
     existing = {tc.applicant_name: tc for tc in
                 db.query(TechCompany).filter(TechCompany.technology_id == tech.id).all()}
 
-    rows = [("tracked", x) for x in matched["tracked"]] \
-        + [("available", x) for x in matched["available"]] \
-        + [("excluded", x) for x in matched["excluded"]]
+    rows = [(s, x) for s in TechStatus for x in matched[s]]
 
     new_count = 0
     for status, x in rows:
@@ -197,9 +196,9 @@ def _promote(db: Session, tech: Technology, onboarded: dict) -> None:
         return
     for tc in db.query(TechCompany).filter(
             TechCompany.technology_id == tech.id,
-            TechCompany.status == "available").all():
+            TechCompany.status == TechStatus.AVAILABLE).all():
         # 여기서 비교하는 corp_name은 양쪽 다 DART 표기다(특허 출원인명이 아니다)
         if tc.corp_name in by_name:
-            tc.status = "tracked"
+            tc.status = TechStatus.TRACKED
             tc.company_id = by_name[tc.corp_name]
     db.commit()

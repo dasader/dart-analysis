@@ -7,9 +7,13 @@ import {
 import { getErrorMessage } from "../lib/errors";
 import AdminButton from "../components/AdminButton";
 import TechReport from "../components/TechReport";
-import type { ScanResult, TechCompany, TechnologyDetail as TechDetail } from "../types";
+import { TECH_STATUSES } from "../types";
+import type { ScanResult, TechCompany, TechStatus, TechnologyDetail as TechDetail } from "../types";
 
-const STATUS_META: Record<string, { title: string; hint: string; cls: string }> = {
+// 보고서 1건 분석비(3.8-flash batch). 백엔드 gemini_batch 주석·CLAUDE.md와 같은 값
+const COST_PER_REPORT = 0.048;
+
+const STATUS_META: Record<TechStatus, { title: string; hint: string; cls: string }> = {
   tracked: {
     title: "추적 중",
     hint: "사업보고서 분석 결과를 볼 수 있습니다",
@@ -27,9 +31,9 @@ const STATUS_META: Record<string, { title: string; hint: string; cls: string }> 
   },
 };
 
-function Section({ status, rows }: { status: string; rows: TechCompany[] }) {
+function Section({ status, rows }: { status: TechStatus; rows: TechCompany[] }) {
   const meta = STATUS_META[status];
-  if (!meta || rows.length === 0) return null;
+  if (rows.length === 0) return null;
 
   return (
     <div className="mb-6">
@@ -120,6 +124,19 @@ export default function TechnologyDetailPage() {
     load();
   }, [load]);
 
+  // 액션 공통 처리: 진행 표시 → 이전 오류 지우기 → 실패하면 배너에 띄운다
+  const run = async (action: () => Promise<unknown>, setBusy?: (b: boolean) => void) => {
+    setBusy?.(true);
+    setError(null);
+    try {
+      await action();
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setBusy?.(false);
+    }
+  };
+
   const handleScan = async (onboard: boolean) => {
     if (onboard) {
       // 상한이 0(전체)이면 몇 개가 걸릴지 미리 알려야 한다 — 비용이 기업 수만큼 곱해진다.
@@ -132,78 +149,56 @@ export default function TechnologyDetailPage() {
           ? `등록 가능한 기업 ${candidates}개사를 모두 등록하고 사업보고서를 분석합니다.\n`
           : `${cap}개 기업을 골라 등록하고 사업보고서를 분석합니다(현재 후보 ${candidates}개).\n` +
             `특허 제목으로 관련성을 판정해 최근 10년 출원이 많은 순으로 고릅니다.\n`) +
-        `보고서 1건당 약 $0.048 — 지금 기준 약 $${(n * 0.048).toFixed(2)}가 발생합니다.\n` +
+        `보고서 1건당 약 $${COST_PER_REPORT} — 지금 기준 약 $${(n * COST_PER_REPORT).toFixed(2)}가 발생합니다.\n` +
         `계속할까요?`,
       )) return;
     }
 
-    setScanning(true);
-    setError(null);
     setScanResult(null);
-    try {
+    await run(async () => {
       setScanResult(await scanTechnology(techId, onboard));
       await load();
-    } catch (e) {
-      setError(getErrorMessage(e));
-    } finally {
-      setScanning(false);
-    }
+    }, setScanning);
   };
 
-  const handleReport = async () => {
-    setReporting(true);
-    setError(null);
-    try {
+  const handleReport = () =>
+    run(async () => {
       await generateTechReport(techId);
       await load();
-    } catch (e) {
-      setError(getErrorMessage(e));
-    } finally {
-      setReporting(false);
-    }
-  };
+    }, setReporting);
 
   const handleSaveKeywords = async () => {
     if (editKeywords === null) return;
     const list = editKeywords.split(",").map((k) => k.trim()).filter(Boolean);
-    try {
+    await run(async () => {
       await updateTechnology(techId, { keywords: list });
       setEditKeywords(null);
       await load();
-    } catch (e) {
-      setError(getErrorMessage(e));
-    }
+    });
   };
 
   // 뽑은 결과를 바로 저장하지 않고 입력창에 채운다 — 회차마다 달라지므로 사람이 보고 고른다
-  const handleSuggest = async () => {
-    setSuggesting(true);
-    setError(null);
-    try {
+  const handleSuggest = () =>
+    run(async () => {
       const { keywords } = await suggestKeywords(techId);
       setEditKeywords(keywords.join(", "));
-    } catch (e) {
-      setError(getErrorMessage(e));
-    } finally {
-      setSuggesting(false);
-    }
-  };
+    }, setSuggesting);
 
   const handleSaveMax = async () => {
     if (editMax === null) return;
-    try {
+    await run(async () => {
       await updateTechnology(techId, { max_companies: editMax });
       setEditMax(null);
       await load();
-    } catch (e) {
-      setError(getErrorMessage(e));
-    }
+    });
   };
 
   const handleDelete = async () => {
     if (!window.confirm("이 기술과 스캔 결과를 삭제합니다. 계속할까요?")) return;
-    await deleteTechnology(techId);
-    navigate("/technologies");
+    await run(async () => {
+      await deleteTechnology(techId);
+      navigate("/technologies");
+    });
   };
 
   if (loading) return <div className="py-16 text-center text-text-tertiary">불러오는 중...</div>;
@@ -349,7 +344,7 @@ export default function TechnologyDetailPage() {
           </div>
         )}
 
-        {/* 분석 상한 — 비용이 기업 수만큼 곱해지므로(1건당 약 $0.048) 여기서 정한다 */}
+        {/* 분석 상한 — 비용이 기업 수만큼 곱해지므로(1건당 약 COST_PER_REPORT) 여기서 정한다 */}
         <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
           <div>
             <span className="text-sm font-medium text-text-primary">분석 상한</span>
@@ -468,7 +463,7 @@ export default function TechnologyDetailPage() {
         )}
       </div>
 
-      {(["tracked", "available", "excluded"] as const).map((s) => (
+      {TECH_STATUSES.map((s) => (
         <Section key={s} status={s} rows={tech.companies.filter((c) => c.status === s)} />
       ))}
     </div>
