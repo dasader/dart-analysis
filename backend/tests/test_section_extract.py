@@ -78,7 +78,7 @@ def test_fails_when_nothing_was_trimmed():
 
 
 def test_fails_when_result_too_short():
-    """본문을 놓쳐 껍데기만 남는 경우도 실패로 본다."""
+    """본문을 놓쳐 껍데기만 남는 경우도 실패로 본다(II 길이로 잰다)."""
     text = ("I. 회사의 개요\n짧음\n"
             + "III. 재무에 관한 사항\n" + FILLER * 20
             + "II. 사업의 내용\n짧음\n")
@@ -102,7 +102,7 @@ def test_cross_reference_is_not_a_heading():
     positions = {r: p for p, r in find_sections(poisoned)}
     # 상호참조(II 본문 안)가 아니라 진짜 III 대제목이 잡혀야 한다
     assert positions["III"] - positions["II"] > 50_000
-    assert len(extract(poisoned)) > 20_000
+    assert FILLER * 6 in extract(poisoned)  # II 본문이 통째로 남는다
 
 
 def test_quoted_heading_both_sides_is_ignored():
@@ -112,3 +112,73 @@ def test_quoted_heading_both_sides_is_ignored():
                             "I. 회사의 개요\n앞서 ‘II. 사업의 내용 참조\n", 1)
     positions = {r: p for p, r in find_sections(poisoned)}
     assert positions["II"] - positions["I"] > 50_000
+
+
+def test_short_report_passes_when_business_section_is_intact():
+    """상보형: I·II가 멀쩡한데 짧은 보고서(I+II 1.7만 자)는 통과해야 한다.
+
+    예전 합계 20,000자 검사는 이걸 떨어뜨렸다.
+    """
+    short = "임원 현황. " * 100  # 버릴 구역 — 비율 검사를 넘길 만큼
+    text = ("I. 회사의 개요\n" + "회사 연혁과 종속회사. " * 500
+            + "II. 사업의 내용\n" + "연구개발 과제와 제품. " * 900
+            + "III. 재무에 관한 사항\n" + FILLER * 3
+            + "VIII. 임원 및 직원\n" + short)
+    out = extract(text)
+    assert len(out) < 20_000
+    assert "II. 사업의 내용" in out
+
+
+def test_truncated_business_section_fails_even_with_iv_xi():
+    """알앤엘형: II가 740자로 잘리면 IV·XI가 합계를 채워도 실패다."""
+    text = build_report().replace(
+        "II. 사업의 내용\n" + FILLER * 6, "II. 사업의 내용\n" + "짧은 본문. " * 100, 1)
+    text = text.replace(
+        "XI. 그 밖에 투자자 보호를 위하여 필요한 사항\n",
+        "XI. 그 밖에 투자자 보호를 위하여 필요한 사항\n1. 공시내용 진행 및 변경사항\n"
+        + FILLER * 2 + "2. 우발부채 등에 관한 사항\n소송 ", 1)
+    with pytest.raises(ExtractionFailed, match="사업의 내용"):
+        extract(text)
+
+
+def _report_with_xi(sub1: str, sub2: str, sub3: str, sub4: str) -> str:
+    return build_report().replace(
+        "XI. 그 밖에 투자자 보호를 위하여 필요한 사항\n" + FILLER * 6,
+        "XI. 그 밖에 투자자 보호를 위하여 필요한 사항\n"
+        + "1. 공시내용 진행 및 변경사항\n" + sub1
+        + "2. 우발부채 등에 관한 사항\n" + sub2
+        + "3. 제재 등과 관련된 사항\n" + sub3
+        + "4. 작성기준일 이후 발생한 주요사항 등 기타사항\n" + sub4, 1)
+
+
+def test_xi_keeps_only_disclosure_and_other_subsections():
+    """XI는 소절 1(수주 공시)·4(신기술 지정)만 — 2(소송)·3(제재)은 노이즈다."""
+    out = extract(_report_with_xi(
+        "방위사업청 체계개발 계약. ", "중요한 소송사건 손해배상. ", "과징금 제재. ",
+        "건설신기술 지정 제1000호. "))
+    assert "체계개발" in out and "건설신기술" in out
+    assert "소송사건" not in out and "과징금" not in out
+
+
+def test_xi_subsection_4_tail_survives():
+    """현대건설: 건설신기술 14건이 소절 4의 뒤쪽(XI 51k자 이후)에 있다.
+
+    XI 앞 N자로 자르면 0건이 되던 것 — 소절 1·2가 길어도 소절 4의 뒤쪽이 남아야 한다.
+    """
+    out = extract(_report_with_xi(
+        "수주 계약. " * 3_000, "소송. " * 5_000, "제재. " * 800,
+        "인증 현황. " * 700 + "건설신기술 제999호"))
+    assert "건설신기술 제999호" in out
+    xi = out[out.index("XI. 그 밖에"):]
+    assert "[...이하 생략...]" in xi  # 소절 1(21,000자)은 상한에서 잘렸다
+
+
+def test_iv_is_capped():
+    """IV는 앞 15,000자만 — POSCO홀딩스는 98,512자다."""
+    text = build_report().replace(
+        "IV. 이사의 경영진단 및 분석의견\n",
+        "IV. 이사의 경영진단 및 분석의견\nGlass 기판 개발. ", 1)
+    out = extract(text)
+    assert "Glass 기판" in out
+    iv = out[out.index("IV. 이사의 경영진단"):]
+    assert iv.index("[...이하 생략...]") <= 15_001  # 상한 + 줄바꿈
