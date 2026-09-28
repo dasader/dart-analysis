@@ -87,7 +87,7 @@ def requeue_orphans() -> int:
 
 def _build_request(db: Session, report_id: int) -> str | None:
     """report 1건의 JSONL 줄을 만든다. 불가하면 해당 분석을 failed로 두고 None."""
-    pending = svc.get_pending(db, report_id)
+    pending = svc.get_by_status(db, report_id, AnalysisStatus.PENDING)
     if not pending:
         return None
 
@@ -167,7 +167,7 @@ async def worker() -> None:
                 except Exception as e:
                     logger.exception("batch 제출 실패")
                     for rid in submitted_ids:
-                        svc.mark_failed(db, svc.get_running(db, rid), f"batch 제출 실패: {e}")
+                        svc.mark_failed(db, svc.get_by_status(db, rid, AnalysisStatus.RUNNING), f"batch 제출 실패: {e}")
                     continue
 
                 db.add(BatchJob(

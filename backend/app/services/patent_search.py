@@ -25,9 +25,6 @@ logger = logging.getLogger(__name__)
 BASE = "https://plus.kipris.or.kr/kipo-api/kipi/patUtiModInfoSearchSevice"
 PROVIDER = "kipris"
 
-# 실측: 7자 2,440건 → 27자 318건(정밀) → 86자 8건(과협소) → 251자 20,029건(노이즈)
-GOOD_QUERY_LEN = (4, 30)
-
 # 총건수가 이보다 크면 "넓은 키워드"로 본다. 결과가 쓰레기가 되는 건 아니지만
 # (관련도순이라 상위 100건은 여전히 관련 있다) 기술 특이성이 희석된다 —
 # "그 기술을 하는 곳" 대신 "그 산업의 큰 회사"가 올라온다.

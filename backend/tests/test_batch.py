@@ -119,7 +119,7 @@ def _fake_client(monkeypatch, upload):
     """files.upload만 갈아끼운 가짜 클라이언트. sleep도 없앤다."""
     from app.services import gemini_batch as gb
 
-    monkeypatch.setattr(gb, "_get_client", lambda: SimpleNamespace(
+    monkeypatch.setattr(gb, "gemini", lambda: SimpleNamespace(
         files=SimpleNamespace(upload=upload),
         batches=SimpleNamespace(create=lambda **kw: SimpleNamespace(name="batches/ok")),
     ))

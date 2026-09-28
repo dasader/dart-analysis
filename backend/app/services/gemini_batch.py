@@ -11,11 +11,10 @@ import time
 from functools import partial
 from pathlib import Path
 
-from google import genai
 from google.genai import types
 from google.genai.errors import ServerError
 
-from app.config import settings
+from app.config import gemini, settings
 from app.constants import MAX_TOKENS_PREFIX
 
 logger = logging.getLogger(__name__)
@@ -41,16 +40,6 @@ TERMINAL_STATES = frozenset({
 # JSONL 업로드 재시도 — 2·4·8초 대기
 _UPLOAD_ATTEMPTS = 4
 _UPLOAD_BACKOFF_SECS = 2
-
-_client: genai.Client | None = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
-
 
 def build_jsonl_line(
     key: str, system_prompt: str, user_prompt: str, max_output_tokens: int,
@@ -116,7 +105,7 @@ def parse_result_line(line: str) -> tuple[str, str | None, str | None]:
 
 def _submit_sync(lines: list[str], display_name: str) -> tuple[str, str]:
     """JSONL 업로드 + batch 생성 (블로킹 — executor에서 실행)."""
-    client = _get_client()
+    client = gemini()
 
     # File API가 파일 경로를 요구하므로 임시 파일을 경유한다
     with tempfile.NamedTemporaryFile("w", suffix=".jsonl", encoding="utf-8", delete=False) as f:
@@ -160,7 +149,7 @@ async def submit(lines: list[str], display_name: str) -> tuple[str, str]:
 
 
 def _get_sync(job_name: str) -> dict:
-    job = _get_client().batches.get(name=job_name)
+    job = gemini().batches.get(name=job_name)
     stats = getattr(job, "batch_stats", None)
     return {
         "state": job.state.name,
@@ -178,7 +167,7 @@ async def get_status(job_name: str) -> dict:
 
 
 def _download_sync(file_name: str) -> list[str]:
-    content = _get_client().files.download(file=file_name)
+    content = gemini().files.download(file=file_name)
     return [l for l in content.decode("utf-8").splitlines() if l.strip()]
 
 
@@ -189,4 +178,4 @@ async def download_results(file_name: str) -> list[str]:
 
 async def cancel(job_name: str) -> None:
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, lambda: _get_client().batches.cancel(name=job_name))
+    await loop.run_in_executor(None, lambda: gemini().batches.cancel(name=job_name))

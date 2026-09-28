@@ -11,11 +11,10 @@ import json
 import logging
 from datetime import datetime
 
-from google import genai
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.config import gemini, settings
 from app.constants import ANALYSIS_TYPES, REPORT_TYPE_ANNUAL, AnalysisStatus
 from app.models import Analysis, Company, DartCorp, Report
 from app.services.analysis_queue import enqueue
@@ -64,9 +63,6 @@ FIT_PROMPT = """기술: {name}
 
 JSON 배열로만 답하라: [{{"corp": "기업명", "role": "core|peripheral|unrelated", "reason": "15자 이내"}}]"""
 
-_client: genai.Client | None = None
-
-
 def rank(cands: list[dict]) -> list[dict]:
     """판정(없으면 동률) → 최근 출원 건수 → 누적 건수 순."""
     return sorted(cands, key=lambda x: (ROLE_RANK.get(x.get("role"), 1),
@@ -75,15 +71,12 @@ def rank(cands: list[dict]) -> list[dict]:
 
 def _judge_sync(name: str, description: str, cands: list[dict],
                 patents: dict[str, list[dict]]) -> dict[str, dict]:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
     rows = []
     for x in cands:
         titles = "\n".join(f"    - {it.get('app_date', '')[:4]} {it.get('status', '')} {it.get('title', '')}"
                            for it in patents.get(x["applicant"], [])[:FIT_TITLES])
         rows.append(f"## {x['corp_name']} (특허 {x['patents']}건)\n{titles}")
-    r = _client.models.generate_content(
+    r = gemini().models.generate_content(
         model=FIT_MODEL,
         contents=FIT_PROMPT.format(name=name, description=description, rows="\n".join(rows)),
         config=types.GenerateContentConfig(

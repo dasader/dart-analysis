@@ -1,5 +1,8 @@
-from pydantic_settings import BaseSettings
+from functools import cache
 from pathlib import Path
+
+from google import genai
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -39,3 +42,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+@cache
+def gemini() -> genai.Client:
+    """Gemini 클라이언트. 처음 부를 때 한 번만 만든다 — import 시점에 만들면 키 없는 환경에서 죽는다."""
+    return genai.Client(api_key=settings.gemini_api_key)

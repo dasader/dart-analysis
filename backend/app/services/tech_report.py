@@ -25,11 +25,10 @@ import re
 from datetime import datetime
 from functools import partial
 
-from google import genai
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.config import gemini, settings
 from app.constants import AnalysisStatus
 from app.models import Analysis, Report, Technology
 from app.services import patent_search, tech_scan
@@ -146,16 +145,6 @@ SYSTEM = """당신은 기술 동향 분석가입니다. 특정 기술에 대해 
 ## 시사점
 3~5개. 각 항목 끝에 근거를 `[특허]` 또는 `[사업보고서]`로 표시하십시오.
 **시사점이 마지막 절입니다.** 대학·연구소 목록은 따로 붙으므로 쓰지 마십시오."""
-
-
-_client: genai.Client | None = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
 
 
 def select_patents(results: list[dict], names: set[str],
@@ -600,7 +589,7 @@ def build_prompt(tech: Technology, results: list[dict], company_md: str,
 
 
 def _call(prompt: str) -> str:
-    r = _get_client().models.generate_content(
+    r = gemini().models.generate_content(
         model=MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(

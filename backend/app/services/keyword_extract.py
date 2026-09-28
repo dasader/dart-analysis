@@ -14,10 +14,9 @@ import logging
 import re
 from functools import partial
 
-from google import genai
 from google.genai import types
 
-from app.config import settings
+from app.config import gemini, settings
 
 logger = logging.getLogger(__name__)
 
@@ -71,18 +70,8 @@ SYSTEM = """당신은 특허 검색 전문가입니다. 주어진 기술 설명�
 
 JSON만 출력하세요: {"keywords": ["...", "..."]}"""
 
-_client: genai.Client | None = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
-
-
 def _call(description: str) -> str:
-    r = _get_client().models.generate_content(
+    r = gemini().models.generate_content(
         model=MODEL,
         contents=f"기술 설명:\n{description}",
         config=types.GenerateContentConfig(

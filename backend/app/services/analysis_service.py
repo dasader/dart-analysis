@@ -57,14 +57,6 @@ def get_by_status(db: Session, report_id: int, status: str) -> list[Analysis]:
     )
 
 
-def get_pending(db: Session, report_id: int) -> list[Analysis]:
-    return get_by_status(db, report_id, AnalysisStatus.PENDING)
-
-
-def get_running(db: Session, report_id: int) -> list[Analysis]:
-    return get_by_status(db, report_id, AnalysisStatus.RUNNING)
-
-
 def build_prompts(
     db: Session, report: Report, types_to_run: list[str], report_text: str
 ) -> tuple[str, str, int]:
