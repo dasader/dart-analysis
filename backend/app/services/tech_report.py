@@ -305,6 +305,17 @@ def _live(tech: Technology) -> list:
     return sorted(live, key=lambda t: -t.patent_count)   # 표·본문·부록 모두 특허 건수순
 
 
+def _support_query(db: Session, ids: list[int], *cols):
+    """보조 근거로 쓰는 완료 분석(SUPPORT_TYPES)과 그 보고서 — 최신 회계연도가 앞에 온다.
+    본문(`_company_section`)과 출원인 표 링크(`_report_links`)가 같은 조건을 써야 링크가 어긋나지 않는다."""
+    return (db.query(*cols)
+            .join(Report, Report.id == Analysis.report_id)
+            .filter(Analysis.company_id.in_(ids),
+                    Analysis.status == AnalysisStatus.COMPLETED,
+                    Analysis.analysis_type.in_(SUPPORT_TYPES))
+            .order_by(Report.fiscal_year.desc()))
+
+
 def _company_section(db: Session, tech: Technology,
                      terms: list[str] | None = None) -> tuple[str, set[int]]:
     """추적 중 기업의 사업보고서 분석 요약 — 각 기업의 **최신 연도** 1건만.
@@ -323,12 +334,7 @@ def _company_section(db: Session, tech: Technology,
     ids = [tc.company_id for tc in live if tc.status == TechStatus.TRACKED and tc.company_id]
     by_co: dict[int, list] = defaultdict(list)
     if ids:
-        for a, r in (db.query(Analysis, Report)
-                     .join(Report, Report.id == Analysis.report_id)
-                     .filter(Analysis.company_id.in_(ids),
-                             Analysis.status == AnalysisStatus.COMPLETED,
-                             Analysis.analysis_type.in_(SUPPORT_TYPES))
-                     .order_by(Report.fiscal_year.desc())):
+        for a, r in _support_query(db, ids, Analysis, Report):
             by_co[a.company_id].append((a, r))
     links = {cid: (rows[0][1].id, rows[0][1].fiscal_year) for cid, rows in by_co.items()}
 
@@ -438,14 +444,8 @@ def _report_links(db: Session, tech: Technology) -> dict[int, tuple[int, int]]:
     ids = [tc.company_id for tc in tech.companies if tc.company_id]
     if not ids:
         return {}
-    rows = (db.query(Analysis.company_id, Report.id, Report.fiscal_year)
-            .join(Report, Report.id == Analysis.report_id)
-            .filter(Analysis.company_id.in_(ids),
-                    Analysis.status == AnalysisStatus.COMPLETED,
-                    Analysis.analysis_type.in_(SUPPORT_TYPES))
-            .order_by(Report.fiscal_year.desc()).all())
     out: dict[int, tuple[int, int]] = {}
-    for cid, rid, year in rows:
+    for cid, rid, year in _support_query(db, ids, Analysis.company_id, Report.id, Report.fiscal_year):
         out.setdefault(cid, (rid, year))      # 정렬이 내림차순이라 첫 항목이 최신
     return out
 

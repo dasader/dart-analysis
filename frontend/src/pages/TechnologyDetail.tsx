@@ -344,7 +344,7 @@ export default function TechnologyDetailPage() {
           </div>
         )}
 
-        {/* 분석 상한 — 비용이 기업 수만큼 곱해지므로(1건당 약 COST_PER_REPORT) 여기서 정한다 */}
+        {/* 분석 상한 — 비용이 기업 수만큼 곱해지므로(1건당 약 $0.048, COST_PER_REPORT) 여기서 정한다 */}
         <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
           <div>
             <span className="text-sm font-medium text-text-primary">분석 상한</span>

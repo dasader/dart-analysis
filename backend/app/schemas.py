@@ -84,6 +84,7 @@ class ReportResponse(BaseModel):
 class AnalysisRequest(BaseModel):
     analysis_type: AnalysisType
 
+
 class AnalysisState(BaseModel):
     """분석 진행 상태만 — 기업 상세의 10초 폴링용. 본문(result_summary)은 수십 KB라 싣지 않는다."""
     id: int
@@ -95,20 +96,13 @@ class AnalysisState(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class AnalysisResponse(BaseModel):
-    id: int
+class AnalysisResponse(AnalysisState):
     company_id: int
-    report_id: int
-    analysis_type: str
-    status: str
     result_json: str | None
     result_summary: str | None
     error_message: str | None
     model_name: str | None
     created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class QueueStatus(BaseModel):

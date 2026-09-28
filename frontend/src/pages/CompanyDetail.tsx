@@ -72,14 +72,15 @@ export default function CompanyDetail() {
 
   // 폴링 전용: 회사/태그는 건너뛰고 보고서와 분석만 갱신.
   // 보고서도 함께 받아야 목록의 분석 상태가 같이 최신이 된다.
-  const refreshProgress = useCallback(async () => {
+  // usePolling이 항상 최신 함수를 부르므로 useCallback이 필요 없다
+  const refreshProgress = async () => {
     const [reps, next] = await Promise.all([
       fetchReports(companyId),
       fetchCompanyAnalyses(companyId),
     ]);
     setReports(reps);
     setAnalyses((prev) => (analysesEqual(prev, next) ? prev : next));
-  }, [companyId]);
+  };
 
   useEffect(() => {
     load();

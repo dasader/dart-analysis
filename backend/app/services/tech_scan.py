@@ -150,9 +150,7 @@ async def scan(db: Session, tech: Technology, onboard: bool = False) -> dict:
         "keywords": keywords,
         "searched": searched,
         "applicants": len(applicants),
-        "tracked": len(matched["tracked"]),
-        "available": len(matched["available"]),
-        "excluded": len(matched["excluded"]),
+        **{s: len(matched[s]) for s in TechStatus},
         **stats,
         "onboarded": onboarded,
     }
@@ -180,8 +178,8 @@ def _onboard_targets(db: Session, matched: dict) -> list[dict]:
     순서 기준은 `tech_pipeline.rank`(최근 출원 건수 → 누적 건수)이고, 후보가 상한보다
     많으면 `order_candidates`가 적합도 판정을 앞에 붙인다.
     """
-    return tech_pipeline.rank(matched["available"]
-                              + _tracked_without_report(db, matched["tracked"]))
+    return tech_pipeline.rank(matched[TechStatus.AVAILABLE]
+                              + _tracked_without_report(db, matched[TechStatus.TRACKED]))
 
 
 def _promote(db: Session, tech: Technology, onboarded: dict) -> None:

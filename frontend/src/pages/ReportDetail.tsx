@@ -105,13 +105,10 @@ export default function ReportDetail() {
   }, [load]);
 
   // 진행 중인 분석이 있으면 주기적으로 갱신. Batch는 분 단위라 10초 간격이면 충분하다.
-  const refresh = useCallback(
-    () =>
-      fetchReportAnalyses(rid).then((next) =>
-        setAnalyses((prev) => (analysesEqual(prev, next) ? prev : next)),
-      ),
-    [rid],
-  );
+  const refresh = () =>
+    fetchReportAnalyses(rid).then((next) =>
+      setAnalyses((prev) => (analysesEqual(prev, next) ? prev : next)),
+    );
   usePolling(refresh, 10000, analyses.some(isInProgress));
 
   const byType = useMemo(

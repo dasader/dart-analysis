@@ -16,7 +16,6 @@ class AnalysisStatus(str, Enum):
     FAILED = "failed"
 
 
-
 class TechStatus(StrEnum):
     """기술 ↔ 기업 분류. 처방이 달라 셋으로 나눈다 — 추적 중(분석 있음) / 등록만 하면 됨 / 산업 밖.
 
