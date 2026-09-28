@@ -25,3 +25,8 @@ REPORT_TYPE_ANNUAL = "사업보고서"
 # 구역 추출 실패 표식 — 이 접두어가 붙은 실패는 보고서 서식 변경 신호이므로
 # 화면에서 따로 모아 보여준다 (LLM에는 보내지 않은 상태다)
 EXTRACTION_FAILED_PREFIX = "[구역추출실패] "
+
+# 응답 형식 실패 — 3종이 한 JSON을 나눠 쓰므로 JSON이 깨지면 어느 유형도 믿을 수 없다.
+# 구역추출실패와 처방이 달라(추출기가 아니라 출력 상한·프롬프트 문제) 배너에 섞지 않는다
+MALFORMED_RESPONSE_PREFIX = "[응답형식오류] "
+MAX_TOKENS_PREFIX = "[출력상한초과] "

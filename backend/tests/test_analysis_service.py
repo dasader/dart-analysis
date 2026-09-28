@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.constants import AnalysisStatus
+from app.constants import MALFORMED_RESPONSE_PREFIX, AnalysisStatus
 from app.migrate import run as run_migrations
 from app.models import Analysis, Company, Report
 from app.seed_prompts import seed_default_prompts
@@ -70,3 +70,23 @@ def test_truncated_result_is_failed_not_completed(db, report):
     rnd = next(a for a in rows if a.analysis_type == "rnd")
     assert "끊겼" in rnd.error_message
     assert rnd.result_summary.endswith("| SDC | 27")  # 원인 추적용으로 남긴다
+
+
+FULL = "## 요약\n내용\n\n## 시사점\n1. 끝"
+
+
+def test_broken_json_fails_all_types(db, report):
+    """잘린 JSON 안에도 `## 시사점`이 있다 — 예전엔 raw가 첫 유형에 들어가 completed로 저장됐다."""
+    rows = _pending(db, report)
+    raw = json.dumps({"subsidiary": FULL, "rnd": FULL}, ensure_ascii=False)[:-20]
+    svc.save_result(db, rows, raw, "m")
+
+    assert all(a.status == AnalysisStatus.FAILED for a in rows)
+    assert all(a.error_message.startswith(MALFORMED_RESPONSE_PREFIX) for a in rows)
+
+
+def test_complete_result_is_completed(db, report):
+    rows = _pending(db, report)
+    svc.save_result(db, rows, json.dumps({t: FULL for t in TYPES}, ensure_ascii=False), "m")
+
+    assert all(a.status == AnalysisStatus.COMPLETED for a in rows)

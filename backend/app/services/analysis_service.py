@@ -4,7 +4,7 @@ import re
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.constants import AnalysisStatus
+from app.constants import MALFORMED_RESPONSE_PREFIX, AnalysisStatus
 from app.models import Analysis, PromptTemplate, Report
 
 logger = logging.getLogger(__name__)
@@ -115,8 +115,13 @@ def save_result(db: Session, pending: list[Analysis], raw: str, model_name: str)
     try:
         result = extract_json(raw)
     except (json.JSONDecodeError, ValueError) as e:
-        logger.warning("JSON 파싱 실패, 전체 텍스트를 첫 번째 유형에 저장: %s", e)
-        result = {pending[0].analysis_type: raw}
+        # 예전엔 raw 전체를 첫 유형에 넣었는데, 잘린 JSON 안에도 `## 시사점`이 들어 있어
+        # 끊김 판정을 통과해 completed로 저장됐다(나머지 둘만 failed). 전부 실패로 둔다
+        logger.warning("JSON 파싱 실패, 담당 분석 전부 failed: %s", e)
+        for a in pending:
+            a.model_name = model_name
+        mark_failed(db, pending, f"{MALFORMED_RESPONSE_PREFIX}JSON 파싱 실패({e}). 재분석하세요.")
+        return
 
     last = {
         t.analysis_type: _last_heading(t.system_prompt)

@@ -16,6 +16,7 @@ from google.genai import types
 from google.genai.errors import ServerError
 
 from app.config import settings
+from app.constants import MAX_TOKENS_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +105,12 @@ def parse_result_line(line: str) -> tuple[str, str | None, str | None]:
 
     parts = (candidates[0].get("content") or {}).get("parts") or []
     text = "".join(p.get("text", "") for p in parts)
+    finish = candidates[0].get("finishReason")
+    if finish == "MAX_TOKENS":
+        # 본문이 있어도 상한에서 잘린 것이다 — 3종 JSON의 뒤쪽 유형이 반쪽이 된다
+        return key, None, f"{MAX_TOKENS_PREFIX}출력 토큰 상한에 걸려 응답이 잘렸습니다 ({len(text):,}자)"
     if not text:
-        return key, None, f"본문이 비어 있습니다 (finishReason={candidates[0].get('finishReason')})"
+        return key, None, f"본문이 비어 있습니다 (finishReason={finish})"
     return key, text, None
 
 
