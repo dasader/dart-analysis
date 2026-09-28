@@ -4,7 +4,7 @@ import re
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.constants import MALFORMED_RESPONSE_PREFIX, AnalysisStatus
+from app.constants import ANALYSIS_TYPES, MALFORMED_RESPONSE_PREFIX, AnalysisStatus
 from app.models import Analysis, PromptTemplate, Report
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,30 @@ def get_by_status(db: Session, report_id: int, status: str) -> list[Analysis]:
         .filter(Analysis.report_id == report_id, Analysis.status == status)
         .all()
     )
+
+
+def mark_pending(db: Session, report: Report, existing: dict[str, Analysis],
+                 types: tuple[str, ...] | list[str] = ANALYSIS_TYPES,
+                 skip_completed: bool = True) -> int:
+    """분석을 pending으로 만든다 — 있으면 되돌리고 없으면 만든다. 커밋·큐 투입은 호출자가 한다.
+
+    skip_completed=True면 이미 완료된 유형은 건너뛴다(비용이 곱해지므로 다시 돌리지 않는다).
+    existing은 미리 조회한 {유형: Analysis}라 여러 보고서를 묶을 때 N+1이 생기지 않는다.
+    반환: pending이 된 유형 수.
+    """
+    n = 0
+    for atype in types:
+        a = existing.get(atype)
+        if skip_completed and a and a.status == AnalysisStatus.COMPLETED:
+            continue
+        if a:
+            a.status = AnalysisStatus.PENDING
+            a.error_message = None
+        else:
+            db.add(Analysis(company_id=report.company_id, report_id=report.id,
+                            analysis_type=atype, status=AnalysisStatus.PENDING))
+        n += 1
+    return n
 
 
 def build_prompts(

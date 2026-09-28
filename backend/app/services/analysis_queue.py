@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.constants import EXTRACTION_FAILED_PREFIX, AnalysisStatus
 from app.database import SessionLocal
-from app.models import Analysis, BatchJob
+from app.models import Analysis, BatchJob, Report
 from app.services import analysis_service as svc
 from app.services import app_settings
 from app.services import gemini_batch as batch
@@ -36,6 +36,20 @@ def enqueue(report_id: int) -> None:
         return
     _queue.put_nowait(report_id)
     _queued_ids.add(report_id)
+
+
+def queue_report(db: Session, report: Report, skip_completed: bool = True) -> int:
+    """보고서 분석 3종을 pending으로 만들고 커밋한 뒤 큐에 넣는다. pending이 된 유형 수를 반환.
+
+    커밋이 enqueue보다 먼저다 — 워커가 미커밋 상태를 읽으면 대상이 비어 보인다.
+    """
+    existing = {a.analysis_type: a for a in
+                db.query(Analysis).filter(Analysis.report_id == report.id).all()}
+    n = svc.mark_pending(db, report, existing, skip_completed=skip_completed)
+    if n:
+        db.commit()
+        enqueue(report.id)
+    return n
 
 
 def get_queue_info() -> dict:
@@ -151,9 +165,7 @@ async def worker() -> None:
             try:
                 lines, submitted_ids = [], []
                 for rid in report_ids:
-                    line = await asyncio.get_running_loop().run_in_executor(
-                        None, _build_request, db, rid
-                    )
+                    line = await asyncio.to_thread(_build_request, db, rid)
                     if line:
                         lines.append(line)
                         submitted_ids.append(rid)

@@ -52,16 +52,19 @@ export default function CompanyDetail() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const load = useCallback(async () => {
-    const [companyData, reps, anals] = await Promise.all([
-      fetchCompany(companyId).catch(() => null),
-      fetchReports(companyId),
-      fetchCompanyAnalyses(companyId),
-    ]);
-    setCompany(companyData);
-    setReports(reps);
-    setAnalyses(anals);
-  }, [companyId]);
+  const load = useCallback(
+    () =>
+      Promise.all([
+        fetchCompany(companyId).catch(() => null),
+        fetchReports(companyId),
+        fetchCompanyAnalyses(companyId),
+      ]).then(([companyData, reps, anals]) => {
+        setCompany(companyData);
+        setReports(reps);
+        setAnalyses(anals);
+      }),
+    [companyId],
+  );
 
   // 비동기 액션 공통 처리: 성공 메시지 토스트 + 재로딩, 실패 시 에러 토스트
   const runWithToast = async (action: () => Promise<string | void>) => {

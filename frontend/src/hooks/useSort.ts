@@ -23,9 +23,3 @@ export function useSort<K extends string>(defaultKey: K, defaultDir: SortDir) {
 
   return { sortKey, sortDir, toggleSort, compare };
 }
-
-/** 정렬 가능한 컬럼 헤더에 붙이는 방향 아이콘. */
-export function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
-  if (!active) return <span className="ml-1 opacity-30">↕</span>;
-  return <span className="ml-1">{dir === "asc" ? "↑" : "↓"}</span>;
-}

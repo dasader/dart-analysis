@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 
 from app.config import settings
-from app.database import Base, engine, SessionLocal
+from app.database import engine, SessionLocal
 from app.migrate import run as run_migrations
 from app.scheduler import start_scheduler, shutdown_scheduler
 from app.seed_prompts import seed_default_prompts
@@ -22,8 +22,7 @@ from app.routers import tags as tags_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 시작: DB 테이블 생성 + 기본 프롬프트 시딩 + 데이터 디렉터리 확보 + 스케줄러 + 큐 워커
-    Base.metadata.create_all(bind=engine)
-    run_migrations(engine)   # create_all은 기존 테이블에 컬럼을 추가하지 못한다
+    run_migrations(engine)   # create_all + 누락 컬럼 추가(create_all은 기존 테이블에 컬럼을 못 붙인다)
     db = SessionLocal()
     try:
         seed_default_prompts(db)

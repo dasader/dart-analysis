@@ -70,27 +70,27 @@ export default function BatchList() {
     }
   };
 
-  if (loading) return <div className="p-6 text-muted">불러오는 중...</div>;
+  if (loading) return <div className="p-6 text-text-secondary">불러오는 중...</div>;
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div>
       <div className="mb-6 flex items-baseline justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">분석 작업 현황</h1>
-          <p className="mt-1 text-sm text-muted">
+          <p className="mt-1 text-sm text-text-secondary">
             분석은 Gemini Batch API로 처리됩니다. 통상 수 분 내 완료되며, 최대 24시간까지
             걸릴 수 있습니다.
           </p>
         </div>
         {queue && (
           <div className="flex gap-4 text-sm">
-            <span className="text-muted">
-              제출 대기 <b className="text-foreground">{queue.pending_count}</b>
+            <span className="text-text-secondary">
+              제출 대기 <b className="text-text-primary">{queue.pending_count}</b>
             </span>
-            <span className="text-muted">
-              처리중 <b className="text-foreground">{queue.running_batches}</b>개 작업
+            <span className="text-text-secondary">
+              처리중 <b className="text-text-primary">{queue.running_batches}</b>개 작업
               {" / "}
-              <b className="text-foreground">{queue.running_reports}</b>개 보고서
+              <b className="text-text-primary">{queue.running_reports}</b>개 보고서
             </span>
           </div>
         )}
@@ -137,13 +137,13 @@ export default function BatchList() {
       )}
 
       {jobs.length === 0 ? (
-        <div className="rounded border border-border bg-white px-6 py-12 text-center text-muted">
+        <div className="rounded border border-border bg-white px-6 py-12 text-center text-text-secondary">
           아직 제출된 분석 작업이 없습니다.
         </div>
       ) : (
         <div className="overflow-x-auto rounded border border-border bg-white">
           <table className="w-full text-sm">
-            <thead className="border-b border-border bg-slate-50 text-left text-xs uppercase text-muted">
+            <thead className="border-b border-border bg-slate-50 text-left text-xs uppercase text-text-secondary">
               <tr>
                 <th className="px-4 py-3 font-medium">제출</th>
                 <th className="px-4 py-3 font-medium">상태</th>
@@ -186,10 +186,10 @@ export default function BatchList() {
                         {job.failed_count}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-muted">
+                    <td className="px-4 py-3 whitespace-nowrap text-text-secondary">
                       {elapsed(job.submitted_at, job.completed_at)}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-xs text-muted">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-text-secondary">
                       {job.model_name}
                       <span className="ml-1 opacity-60">({job.thinking_level})</span>
                     </td>

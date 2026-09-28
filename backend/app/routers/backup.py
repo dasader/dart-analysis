@@ -5,6 +5,7 @@
 디스크로 넘어가지만, 여기서는 확실히 하려고 명시적으로 청크 복사한다.
 """
 import logging
+import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -32,12 +33,12 @@ def _spool(upload: UploadFile, dest: Path) -> None:
 
 
 def _download(path: Path, filename: str) -> FileResponse:
-    """다 보내고 나면 임시 파일을 지운다."""
+    """다 보내고 나면 임시 디렉터리째 지운다(파일만 지우면 mkdtemp 디렉터리가 /tmp에 쌓인다)."""
     return FileResponse(
         path=str(path),
         media_type="application/gzip",
         filename=filename,
-        background=BackgroundTask(lambda: path.unlink(missing_ok=True)),
+        background=BackgroundTask(shutil.rmtree, path.parent, ignore_errors=True),
     )
 
 
@@ -96,4 +97,4 @@ def upload_applicant_corps(file: UploadFile):
 @router.get("/status")
 def backup_status():
     """현재 적재량 — 화면에서 '옮겨야 할 게 있는지' 판단하는 근거."""
-    return svc._row_counts()
+    return svc.row_counts()

@@ -27,8 +27,12 @@ class Settings(BaseSettings):
     data_dir: Path = Path("/app/data")
 
     @property
+    def db_path(self) -> Path:
+        return self.data_dir / "db.sqlite3"
+
+    @property
     def db_url(self) -> str:
-        return f"sqlite:///{self.data_dir / 'db.sqlite3'}"
+        return f"sqlite:///{self.db_path}"
 
     @property
     def reports_dir(self) -> Path:

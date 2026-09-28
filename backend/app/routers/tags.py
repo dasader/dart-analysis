@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.crud import get_or_404
+from app.crud import apply_update, get_or_404
 from app.database import get_db
 from app.models import Tag
 from app.schemas import TagResponse, TagCreate, TagUpdate
@@ -32,8 +32,7 @@ def update_tag(tag_id: int, body: TagUpdate, db: Session = Depends(get_db)):
     if body.name and body.name != tag.name:
         if db.query(Tag).filter(Tag.name == body.name).first():
             raise HTTPException(409, f"이미 존재하는 태그입니다: {body.name}")
-    for key, val in body.model_dump(exclude_unset=True).items():
-        setattr(tag, key, val)
+    apply_update(tag, body)
     db.commit()
     db.refresh(tag)
     return tag

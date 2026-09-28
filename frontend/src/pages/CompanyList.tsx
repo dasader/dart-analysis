@@ -5,7 +5,8 @@ import CompanyForm from "../components/CompanyForm";
 import CompanyEditModal from "../components/CompanyEditModal";
 import TagChip from "../components/TagChip";
 import AdminButton from "../components/AdminButton";
-import { useSort, SortIcon } from "../hooks/useSort";
+import { useSort } from "../hooks/useSort";
+import SortIcon from "../components/SortIcon";
 import type { Company, Tag } from "../types";
 
 type SortKey = "corp_name" | "corp_code" | "report_count" | "latest_analysis_date";
@@ -21,7 +22,6 @@ export default function CompanyList() {
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
 
   const load = () => {
-    setLoading(true);
     fetchCompanies()
       .then(setCompanies)
       .catch(() => {})

@@ -23,12 +23,14 @@ import { getAdminKey } from "../lib/adminKey";
 
 const BASE = "/api";
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+/** 관리자 키 헤더를 붙이고 오류 응답을 예외로 바꾼다. Content-Type은 정하지 않는다 —
+ *  업로드는 브라우저가 boundary를 담아 직접 정해야 하고(명시하면 multipart 파싱이 깨진다),
+ *  다운로드는 JSON이 아니라 파일을 받는다. */
+async function adminFetch(url: string, init?: RequestInit): Promise<Response> {
   const adminKey = getAdminKey();
   const resp = await fetch(`${BASE}${url}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
       ...(adminKey ? { "X-Admin-Key": adminKey } : {}),
       ...((init?.headers as Record<string, string> | undefined) ?? {}),
     },
@@ -37,15 +39,26 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     const body = await resp.json().catch(() => ({}));
     throw new Error(body.detail || `HTTP ${resp.status}`);
   }
+  return resp;
+}
+
+/** JSON API 호출. */
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const resp = await adminFetch(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...((init?.headers as Record<string, string> | undefined) ?? {}),
+    },
+  });
   if (resp.status === 204) return undefined as T;
   return resp.json();
 }
 
 // --- Companies ---
 
-export function fetchCompanies(tagIds?: number[]): Promise<Company[]> {
-  const qs = tagIds && tagIds.length > 0 ? `?tag_ids=${tagIds.join(",")}` : "";
-  return request(`/companies${qs}`);
+export function fetchCompanies(): Promise<Company[]> {
+  return request("/companies");
 }
 
 export function fetchCompany(id: number): Promise<Company> {
@@ -185,7 +198,7 @@ export function suggestKeywords(id: number): Promise<{ keywords: string[] }> {
 
 export function generateTechReport(
   id: number,
-): Promise<{ report_md: string; report_generated_at: string }> {
+): Promise<{ report_md: string; report_generated_at: string; report_basis: string }> {
   return request(`/technologies/${id}/report`, { method: "POST" });
 }
 
@@ -256,26 +269,7 @@ export async function verifyAdminKey(key: string): Promise<boolean> {
   return resp.ok;
 }
 
-// --- 백업·복원 ---
-// request() 래퍼를 쓰지 않는다. 업로드는 브라우저가 boundary를 담은 Content-Type을
-// 직접 정해야 하고(명시하면 multipart 파싱이 깨진다), 다운로드는 JSON이 아니라
-// 파일을 받아야 한다. 둘 다 관리자 키 헤더는 필요하다.
-
-async function adminFetch(url: string, init?: RequestInit): Promise<Response> {
-  const adminKey = getAdminKey();
-  const resp = await fetch(`${BASE}${url}`, {
-    ...init,
-    headers: {
-      ...(adminKey ? { "X-Admin-Key": adminKey } : {}),
-      ...((init?.headers as Record<string, string> | undefined) ?? {}),
-    },
-  });
-  if (!resp.ok) {
-    const body = await resp.json().catch(() => ({}));
-    throw new Error(body.detail || `HTTP ${resp.status}`);
-  }
-  return resp;
-}
+// --- 백업·복원 (request 대신 adminFetch — 멀티파트 업로드·파일 다운로드) ---
 
 /** 파일을 받아 브라우저 다운로드로 넘긴다. 헤더가 필요해 단순 링크로는 안 된다. */
 export async function downloadBackup(kind: "corps" | "db"): Promise<void> {

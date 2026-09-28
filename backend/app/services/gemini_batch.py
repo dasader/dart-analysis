@@ -8,13 +8,12 @@ import json
 import logging
 import tempfile
 import time
-from functools import partial
 from pathlib import Path
 
 from google.genai import types
 from google.genai.errors import ServerError
 
-from app.config import gemini, settings
+from app.config import gemini
 from app.constants import MAX_TOKENS_PREFIX
 
 logger = logging.getLogger(__name__)
@@ -144,8 +143,7 @@ def _submit_sync(lines: list[str], display_name: str) -> tuple[str, str]:
 
 async def submit(lines: list[str], display_name: str) -> tuple[str, str]:
     """batch 작업을 제출하고 (job_name, file_name)을 반환."""
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, partial(_submit_sync, lines, display_name))
+    return await asyncio.to_thread(_submit_sync, lines, display_name)
 
 
 def _get_sync(job_name: str) -> dict:
@@ -162,8 +160,7 @@ def _get_sync(job_name: str) -> dict:
 
 
 async def get_status(job_name: str) -> dict:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, partial(_get_sync, job_name))
+    return await asyncio.to_thread(_get_sync, job_name)
 
 
 def _download_sync(file_name: str) -> list[str]:
@@ -172,10 +169,8 @@ def _download_sync(file_name: str) -> list[str]:
 
 
 async def download_results(file_name: str) -> list[str]:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, partial(_download_sync, file_name))
+    return await asyncio.to_thread(_download_sync, file_name)
 
 
 async def cancel(job_name: str) -> None:
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, lambda: gemini().batches.cancel(name=job_name))
+    await asyncio.to_thread(gemini().batches.cancel, name=job_name)

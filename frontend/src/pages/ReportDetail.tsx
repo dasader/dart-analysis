@@ -17,9 +17,9 @@ import {
 } from "../types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Analysis, AnalysisType, Company, Report } from "../types";
+import type { Analysis, AnalysisStatus, AnalysisType, Company, Report } from "../types";
 
-const STATUS_BADGE: Record<string, { text: string; cls: string }> = {
+const STATUS_BADGE: Record<AnalysisStatus, { text: string; cls: string }> = {
   pending: { text: "대기", cls: "bg-gray-100 text-text-tertiary" },
   running: { text: "처리중", cls: "bg-warning-bg text-warning" },
   completed: { text: "완료", cls: "bg-success-bg text-success" },
@@ -179,7 +179,7 @@ export default function ReportDetail() {
       <div className="no-print mb-6 border-b border-border">
         <div className="flex gap-0">
           {ANALYSIS_TYPE_KEYS.map((t) => {
-            const badge = STATUS_BADGE[byType.get(t)?.status ?? ""];
+            const status = byType.get(t)?.status;
             return (
               <button
                 key={t}
@@ -191,9 +191,9 @@ export default function ReportDetail() {
                 }`}
               >
                 {ANALYSIS_TYPE_LABELS[t]}
-                {badge && badge.text !== "완료" && (
-                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${badge.cls}`}>
-                    {badge.text}
+                {status && status !== "completed" && (
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${STATUS_BADGE[status].cls}`}>
+                    {STATUS_BADGE[status].text}
                   </span>
                 )}
               </button>

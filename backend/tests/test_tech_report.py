@@ -537,8 +537,7 @@ def test_source_mentions_fold_duplicates(db, tech, monkeypatch):
     """원문에 같은 문장이 두 번 실리면(임원 보수 사유 등) 칸만 먹는다 — 사업화 신호가 밀려난다."""
     block = "x" * 150 + "반복 문장 전고체 사업. " + "x" * 150
     body = block * 2 + "BMW와 전고체 배터리 실증 프로젝트 업무협약"
-    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: body)
-    hits = tech_report._mentions_in_source(Report(id=1, file_path="f"), ["전고체"])
+    hits = tech_report._mentions_in_source(body, ["전고체"])
     assert len(hits) == 2
     assert any("실증 프로젝트" in h for h in hits)
 

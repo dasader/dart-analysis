@@ -28,11 +28,7 @@ def _counts(tech: Technology) -> dict:
 
 
 def _keyword_stats(tech: Technology) -> list[dict]:
-    try:
-        rows = json.loads(tech.keyword_stats or "[]")
-    except json.JSONDecodeError:
-        return []
-    return [r for r in rows if isinstance(r, dict) and "word" in r]
+    return [r for r in tech_scan.json_list(tech.keyword_stats, dict) if "word" in r]
 
 
 def _to_response(tech: Technology) -> TechnologyResponse:
@@ -53,10 +49,7 @@ def _company_response(tc: TechCompany, scanned_at) -> TechCompanyResponse:
     # 마지막 스캔 시각과 비교해 신규/이탈을 가른다
     is_new = bool(scanned_at and tc.first_seen_at and tc.first_seen_at >= scanned_at)
     is_gone = bool(scanned_at and tc.last_seen_at and tc.last_seen_at < scanned_at)
-    try:
-        hits = json.loads(tc.keyword_hits or "[]")
-    except json.JSONDecodeError:
-        hits = []
+    hits = tech_scan.json_list(tc.keyword_hits)
     return TechCompanyResponse(
         id=tc.id, company_id=tc.company_id, corp_code=tc.corp_code,
         corp_name=tc.corp_name, applicant_name=tc.applicant_name,

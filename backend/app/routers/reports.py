@@ -12,7 +12,7 @@ from app.schemas import ReportResponse, ReportDownloadRequest
 from app.services.dart_client import list_reports, extract_fiscal_year_from_name
 from app.services.report_service import (
     create_report_from_dart,
-    download_and_extract,
+    download_report,
     extract_text_from_report,
 )
 from app.dependencies import require_admin
@@ -123,7 +123,7 @@ async def redownload_report(report_id: int, db: Session = Depends(get_db)):
     # 파일이 바뀌므로 기존 분석 결과 삭제
     db.query(Analysis).filter(Analysis.report_id == report_id).delete()
 
-    file_path = await download_and_extract(
+    file_path = await download_report(
         report.company.corp_code, report.rcept_no, report.fiscal_year
     )
     report.file_path = file_path

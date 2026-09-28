@@ -163,7 +163,7 @@ export interface TechnologyDetail extends Technology {
 export interface ScanResult {
   technology_id: number;
   keywords: string[];
-  searched: { word: string; total: number; broad: boolean }[];
+  searched: KeywordStat[];
   applicants: number;
   tracked: number;
   available: number;

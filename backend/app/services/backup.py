@@ -40,10 +40,6 @@ class BackupError(RuntimeError):
     """복원 파일이 잘못됐다. 이 예외가 나면 기존 DB는 건드리지 않은 상태다."""
 
 
-def _db_path() -> Path:
-    return settings.data_dir / "db.sqlite3"
-
-
 # --- export -------------------------------------------------------------
 
 def _snapshot(src: Path, dst: Path) -> None:
@@ -56,7 +52,7 @@ def dump_full(out: Path) -> None:
     """전체 DB를 gzip으로."""
     with tempfile.TemporaryDirectory() as tmp:
         snap = Path(tmp) / "snap.sqlite3"
-        _snapshot(_db_path(), snap)
+        _snapshot(settings.db_path, snap)
         _gzip_to(snap, out)
 
 
@@ -64,7 +60,7 @@ def dump_corps(out: Path) -> None:
     """법인 2테이블만 새 SQLite로 뽑아 gzip. 실측 21.6MB / 1.6초."""
     with tempfile.TemporaryDirectory() as tmp:
         snap, sub = Path(tmp) / "snap.sqlite3", Path(tmp) / "corps.sqlite3"
-        _snapshot(_db_path(), snap)      # 먼저 스냅샷 — 뽑는 동안 원본이 바뀌어도 무관
+        _snapshot(settings.db_path, snap)      # 먼저 스냅샷 — 뽑는 동안 원본이 바뀌어도 무관
 
         conn = sqlite3.connect(snap)
         try:
@@ -126,10 +122,9 @@ def restore_full(upload: Path) -> dict:
         # 열린 커넥션을 정리한 뒤 backup API로 덮어쓴다 — 파일 교체가 아니라
         # in-place 복원이라 재시작이 필요 없다
         engine.dispose()
-        with sqlite3.connect(src) as s, sqlite3.connect(_db_path()) as d:
-            s.backup(d)
+        _snapshot(src, settings.db_path)
 
-    counts = _row_counts()
+    counts = row_counts()
     logger.info("전체 DB 복원 완료: %s", counts)
     return counts
 
@@ -143,7 +138,7 @@ def restore_corps(upload: Path) -> dict:
             raise BackupError(
                 f"법인 테이블이 없습니다. 기대: {', '.join(CORP_TABLES)}")
 
-        conn = sqlite3.connect(_db_path())
+        conn = sqlite3.connect(settings.db_path)
         try:
             conn.execute("attach database ? as src", (str(src),))
             for table in sorted(found):
@@ -155,14 +150,14 @@ def restore_corps(upload: Path) -> dict:
         finally:
             conn.close()
 
-    counts = _row_counts()
+    counts = row_counts()
     logger.info("법인 테이블 복원 완료: %s", counts)
     return counts
 
 
-def _row_counts() -> dict:
+def row_counts() -> dict:
     out = {}
-    with sqlite3.connect(_db_path()) as c:
+    with sqlite3.connect(settings.db_path) as c:
         for t in CORP_TABLES:
             try:
                 out[t] = c.execute(f'select count(*) from "{t}"').fetchone()[0]

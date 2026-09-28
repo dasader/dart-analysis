@@ -10,7 +10,6 @@ import asyncio
 import logging
 from collections import Counter
 from datetime import datetime
-from functools import partial
 
 import httpx
 from sqlalchemy.orm import Session
@@ -101,14 +100,13 @@ async def search(db: Session, word: str, pages: int = 1, rows: int = 100,
         raise PatentSearchError("KIPRIS_API_KEY가 설정되지 않았습니다.")
     api_usage.check(db, PROVIDER, need=pages)
 
-    loop = asyncio.get_running_loop()
     total, collected, fetched = 0, [], 0
 
     for page in range(1, pages + 1):
         params = {"word": query, "patent": "true", "utility": "true",
                   "pageNo": page, "numOfRows": rows}
         try:
-            text = await loop.run_in_executor(None, partial(_get, "getWordSearch", params))
+            text = await asyncio.to_thread(_get, "getWordSearch", params)
             code, total, items = _parse(text)
         except Exception as e:
             api_usage.record(db, PROVIDER, "getWordSearch", query, ok=False,
@@ -185,6 +183,19 @@ def core_only(results: list[dict]) -> tuple[list[dict], set[str]]:
     return [{**r, "items": [it for it in r["items"] if it["ipc_core"]]} for r in results], core
 
 
+def unique_items(results: list[dict]):
+    """(검색 결과, 특허)를 출원번호당 한 번씩 낸다 — 같은 특허가 여러 키워드에 걸리면 중복 집계된다.
+    출원번호가 없는 특허는 접을 근거가 없어 그대로 낸다."""
+    seen: set[str] = set()
+    for res in results:
+        for item in res["items"]:
+            if item["app_no"]:
+                if item["app_no"] in seen:
+                    continue
+                seen.add(item["app_no"])
+            yield res, item
+
+
 def aggregate_applicants(results: list[dict]
                          ) -> tuple[Counter, dict[str, set[str]], dict[str, list[dict]]]:
     """여러 검색 결과에서 출원인별 (특허 건수, 등장한 키워드 집합, 특허 목록)을 낸다.
@@ -196,32 +207,35 @@ def aggregate_applicants(results: list[dict]
 
     특허 목록은 온보딩 순서를 정할 때 쓴다(최근 출원 건수, 제목 기반 적합도 판정).
     """
-    seen: set[str] = set()
     counter: Counter = Counter()
     keywords: dict[str, set[str]] = {}
     patents: dict[str, list[dict]] = {}
-    for res in results:
-        for item in res["items"]:
-            if item["app_no"] and item["app_no"] in seen:
-                continue
-            if item["app_no"]:
-                seen.add(item["app_no"])
-            for name in item["applicants"]:
-                counter[name] += 1
-                keywords.setdefault(name, set()).add(res["word"])
-                patents.setdefault(name, []).append(item)
+    for res, item in unique_items(results):
+        for name in item["applicants"]:
+            counter[name] += 1
+            keywords.setdefault(name, set()).add(res["word"])
+            patents.setdefault(name, []).append(item)
     return counter, keywords, patents
+
+
+def is_broad(total: int) -> bool:
+    """총건수가 `BROAD_THRESHOLD`를 넘는 넓은 키워드인가. 판정이 아니라 확인 신호다."""
+    return total > BROAD_THRESHOLD
+
+
+def recent_cutoff(this_year: int | None = None) -> str:
+    """최근 RECENT_YEARS년의 출원일 하한(YYYYMMDD 문자열 비교용)."""
+    return f"{(this_year if this_year is not None else datetime.utcnow().year) - RECENT_YEARS}0000"
 
 
 def count_recent(items: list[dict], this_year: int | None = None) -> int:
     """최근 RECENT_YEARS년 안에 출원한 건수. 출원일을 모르는 것은 센다(거를 근거가 없다)."""
-    cutoff = f"{(this_year or datetime.utcnow().year) - RECENT_YEARS}0000"
+    cutoff = recent_cutoff(this_year)
     return sum(1 for it in items if not it.get("app_date") or it["app_date"] >= cutoff)
 
 
-def match_companies(db: Session, applicants: Counter, limit: int | None = None,
-                    keywords: dict[str, set[str]] | None = None,
-                    patents: dict[str, list[dict]] | None = None) -> dict:
+def match_companies(db: Session, applicants: Counter, keywords: dict[str, set[str]],
+                    patents: dict[str, list[dict]], limit: int | None = None) -> dict:
     """출원인명 → 법인번호 → DART 기업.
 
     이름으로 매칭하지 않는다 — 특허는 한글 표기("주식회사 엘지화학"), DART는 영문
@@ -257,9 +271,9 @@ def match_companies(db: Session, applicants: Counter, limit: int | None = None,
         cnt = applicants[name]
         jurir = by_name.get(name)
         base = {"applicant": name, "patents": cnt, "jurir_no": jurir,
-                "keywords": sorted(keywords.get(name, [])) if keywords else [],
+                "keywords": sorted(keywords.get(name, [])),
                 # 특허 목록을 안 주면 누적 건수로 대신한다(예전 순서 그대로)
-                "recent": count_recent(patents.get(name, [])) if patents else cnt}
+                "recent": count_recent(patents.get(name, []))}
 
         if jurir and jurir in tracked_by_jurir:
             c = tracked_by_jurir[jurir]

@@ -18,7 +18,7 @@ from app.services.dart_client import (
 logger = logging.getLogger(__name__)
 
 
-async def download_and_extract(corp_code: str, rcept_no: str, fiscal_year: int) -> str:
+async def download_report(corp_code: str, rcept_no: str, fiscal_year: int) -> str:
     """보고서 ZIP 다운로드 → 저장. 저장 디렉터리 경로 반환.
 
     **디스크에 풀어 두지 않는다.** 실측 11건에서 ZIP 7MB인데 풀어 놓은 것이 88MB로
@@ -50,7 +50,7 @@ async def create_report_from_dart(
     fiscal_year는 보고서명에서 추출하되, 없으면 fallback_year를 사용.
     """
     fiscal_year = extract_fiscal_year_from_name(dart_report["report_name"]) or fallback_year
-    file_path = await download_and_extract(company.corp_code, dart_report["rcept_no"], fiscal_year)
+    file_path = await download_report(company.corp_code, dart_report["rcept_no"], fiscal_year)
 
     report = Report(
         company_id=company.id,
@@ -75,7 +75,7 @@ def extract_text_from_report(file_path: str, max_chars: int | None = None) -> st
     """저장된 보고서 ZIP에서 텍스트를 추출.
 
     ZIP 안의 XML/HTML을 **메모리에서** 읽어 태그를 제거한 텍스트를 반환한다.
-    풀어서 저장하지 않는 이유는 download_and_extract 주석 참조.
+    풀어서 저장하지 않는 이유는 download_report 주석 참조.
 
     max_chars가 주어지면 누적 길이가 그 값에 도달하는 즉시 읽기를 중단한다
     (앞부분만 필요한 호출용 — 전체 head/tail 트런케이션이 필요하면 None으로).

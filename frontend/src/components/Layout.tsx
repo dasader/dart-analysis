@@ -35,7 +35,6 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      {/* Top Navigation */}
       <header className="no-print sticky top-0 z-50 border-b border-border bg-navy text-white shadow-sm">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
           <Link
@@ -99,12 +98,10 @@ export default function Layout() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
         <Outlet />
       </main>
 
-      {/* Footer */}
       <footer className="no-print mt-4 border-t border-border">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <span className="text-xs font-medium text-text-tertiary">
