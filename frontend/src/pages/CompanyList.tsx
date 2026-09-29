@@ -280,7 +280,10 @@ export default function CompanyList() {
         onCreated={load}
       />
 
+      {/* key: 기업이 바뀔 때마다 새로 만든다 — 입력칸 초기값(useState)은 처음 만들 때 한 번만 쓰이므로,
+          없으면 빈칸이나 직전 기업의 값이 남고 저장 시 이름·활성 여부를 덮어쓴다 */}
       <CompanyEditModal
+        key={editTarget?.id ?? 0}
         company={editTarget}
         onClose={() => setEditTarget(null)}
         onUpdated={load}

@@ -13,6 +13,7 @@ from app.schemas import (
     CompanyCreate, CompanyUpdate, CompanyResponse, CompanySearchResult,
 )
 from app.services.dart_client import fetch_jurir_no, search_companies
+from app.services.report_service import delete_company_files
 from app.dependencies import require_admin
 
 logger = logging.getLogger(__name__)
@@ -113,8 +114,10 @@ def update_company(company_id: int, body: CompanyUpdate, db: Session = Depends(g
 @router.delete("/{company_id}", status_code=204, dependencies=[Depends(require_admin)])
 def delete_company(company_id: int, db: Session = Depends(get_db)):
     company = get_or_404(db, Company, company_id, "기업을 찾을 수 없습니다.")
+    corp_code = company.corp_code
     db.delete(company)
     db.commit()
+    delete_company_files(corp_code)   # DB가 먼저 — 커밋이 실패하면 파일은 남아 있어야 한다
 
 
 @router.post("/{company_id}/tags/{tag_id}", response_model=CompanyResponse)

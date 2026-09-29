@@ -246,7 +246,7 @@ def _source_text(report: Report) -> str | None:
     if not report.file_path:
         return None
     try:
-        return extract_text_from_report(report.file_path) or None
+        return extract_text_from_report(report.file_path, report.rcept_no) or None
     except Exception:
         logger.warning("원문 읽기 실패, 건너뜀: report_id=%s", report.id)
         return None

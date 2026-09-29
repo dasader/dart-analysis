@@ -11,6 +11,7 @@ from app.models import Company, Report, Analysis
 from app.schemas import ReportResponse, ReportDownloadRequest
 from app.services.dart_client import list_reports, extract_fiscal_year_from_name
 from app.services.report_service import (
+    delete_report_files,
     create_report_from_dart,
     download_report,
     extract_text_from_report,
@@ -114,6 +115,7 @@ def delete_report(report_id: int, db: Session = Depends(get_db)):
     report = get_or_404(db, Report, report_id, "보고서를 찾을 수 없습니다.")
     db.delete(report)
     db.commit()
+    delete_report_files(report)   # DB가 먼저 — 커밋이 실패하면 파일은 남아 있어야 한다
 
 
 @router.post("/api/reports/{report_id}/redownload", response_model=ReportResponse, dependencies=[Depends(require_admin)])
@@ -143,5 +145,5 @@ def get_report_content(report_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "보고서 파일이 아직 다운로드되지 않았습니다.")
 
     # 앞부분 미리보기만 필요하므로 상한 도달 시 추출을 조기 중단
-    text = extract_text_from_report(report.file_path, max_chars=CONTENT_PREVIEW_CHARS)
+    text = extract_text_from_report(report.file_path, report.rcept_no, max_chars=CONTENT_PREVIEW_CHARS)
     return {"report_id": report_id, "content": text[:CONTENT_PREVIEW_CHARS]}

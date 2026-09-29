@@ -106,7 +106,8 @@ def _build_request(db: Session, report_id: int) -> str | None:
         return None
 
     try:
-        raw_text = extract_text_from_report(pending[0].report.file_path)
+        report = pending[0].report
+        raw_text = extract_text_from_report(report.file_path, report.rcept_no)
         if not raw_text:
             raise ValueError("보고서 텍스트를 추출할 수 없습니다.")
 

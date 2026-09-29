@@ -631,11 +631,11 @@ def test_analysis_mention_needs_term_in_source(db, tech, monkeypatch):
                        corp_name="가완성차", patent_count=20, status="tracked", keyword_hits="[]"))
     db.commit()
     db.refresh(tech)
-    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: "Factorial 지분 1.76% 보유")
+    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda *_: "Factorial 지분 1.76% 보유")
     md, _ = tech_report._company_section(db, tech, ["전고체"])
     assert "| 가완성차 | 관심·검토 |" in md
 
     # 원문에 용어가 있으면 분석 문장도 근거로 받는다
-    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: "전고체 배터리 개발")
+    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda *_: "전고체 배터리 개발")
     md, _ = tech_report._company_section(db, tech, ["전고체"])
     assert "| 가완성차 | ? |" in md

@@ -214,6 +214,10 @@ UTC로 못박고 `Asia/Seoul`로 포맷한다. 날짜만 있는 값(`2025-03-11`
 - `corpCode.xml` (ZIP) → 기업 코드 검색
 - `list.json` → 공시 목록 (`pblntf_ty=A` 정기공시만)
 - `document.xml` → 보고서 ZIP 다운로드, `{DATA_DIR}/reports/{corp_code}/{fiscal_year}/{rcept_no}.zip` 저장
+- **보고서는 자기 접수번호의 ZIP(`{rcept_no}.zip`)만 읽는다**(`report_service._report_zip`). 폴더
+  (`reports/{corp}/{year}`)의 ZIP을 전부 읽으면 다른 보고서가 섞인다 — 보고서를 지워도 ZIP이 남던 때가
+  있었고, 사업연도를 교정해도 파일은 옛 연도 폴더에 남는다. 자기 ZIP이 없으면(옛 데이터) 폴더에 하나뿐일
+  때만 읽고, 여럿이면 섞지 않고 빈 텍스트(구역 추출 실패)로 드러낸다. 보고서·기업을 지우면 파일도 지운다
 - **ZIP을 디스크에 풀지 않는다.** `extract_text_from_report`가 읽을 때 메모리에서 푼다.
   풀어 두면 원본의 13배가 쌓인다 — 실측 11건에서 ZIP 7MB인데 `extracted/`가 88MB로
   디스크의 93%였다(91MB → 6.7MB로 줄었다). 압축 해제는 보고서 1건당 10~80ms라
