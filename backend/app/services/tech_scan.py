@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.constants import TechStatus
 from app.models import Report, Technology, TechCompany
-from app.services import api_usage, patent_search, tech_pipeline
+from app.services import api_usage, keyword_extract, patent_search, tech_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +24,13 @@ class ScanIncomplete(RuntimeError):
     """전체 검색이 완결되지 않아 저장하지 않았다."""
 
 
-# 키워드당 받아 올 페이지 수(100건/페이지). 1페이지는 기업을 통째로 놓친다 —
-# 실측: '황화물계 고체전해질' 상위 100건에 LG화학 0건, 101~300위에 15건.
-# 출원인도 27명 → 61명으로 늘었다. 대신 KIPRIS 월 1,000회를 2배로 쓴다
-# (키워드 4개 기준 기술 125건까지 월 1회 스캔 가능).
-PAGES = 2
+# 키워드당 받아 올 페이지 수(100건/페이지). 예전엔 2였다 — 1페이지는 기업을 통째로 놓친다
+# ('황화물계 고체전해질' 상위 100건에 LG화학 0건, 101~300위에 15건).
+# 그런데 같은 호출 수라면 **페이지보다 키워드 각도**가 기업을 더 찾는다(키워드 8개 × 1페이지가
+# 4개 × 2페이지 이상: 전고체 58 vs 56%, 세포 유전자 치료 37 vs 21%). 그래서 키워드를
+# 두 벌 뽑고(keyword_extract.SAMPLES) 첫 스캔에서 3개를 더 캐는(_expand) 대신 1페이지로 줄였다.
+# 기술 1건 스캔 ≈ 키워드 10~11회 → 월 1,000회로 기술 90~100건.
+PAGES = 1
 
 
 def json_list(raw: str | None, typ: type = str) -> list:
@@ -60,6 +62,8 @@ async def search_in_core(db: Session, tech: Technology, keywords: list[str],
     """
     core = get_ipc_core(tech)
     results = await _search_all(db, keywords, pages, core or None)
+    if not results:
+        raise ScanIncomplete("검색 결과가 없습니다.")
     if core:
         return results, None
     results, found = patent_search.core_only(results)
@@ -79,9 +83,25 @@ async def _search_all(db: Session, keywords: list[str], pages: int,
         except patent_search.PatentSearchError as e:
             # 키워드 하나의 실패는 감수한다. 검색어가 나쁠 수도 있다
             logger.warning("검색 실패, 건너뜀: %r — %s", word, e)
-    if not results:
-        raise ScanIncomplete("검색 결과가 없습니다.")
     return results
+
+
+async def _expand(db: Session, tech: Technology, keywords: list[str], results: list[dict],
+                  core: list[str]) -> list[dict]:
+    """첫 스캔 결과에서 키워드를 더 캐고(keyword_extract.expand) 코어 안에서 검색한다.
+
+    **코어를 새로 잡은 스캔에서만 돈다**(기술 등록 직후, 키워드를 고친 뒤). 더한 키워드는
+    `tech.keywords`에 저장되므로 이후 월간 스캔은 추가 비용 없이 그대로 쓴다. 키워드를 고칠
+    때마다 3개씩 더 붙는 셈이니, 필요 없으면 화면에서 지우면 된다.
+    확장 실패는 스캔을 막지 않는다 — 기존 키워드만으로도 스캔은 성립한다."""
+    try:
+        extra = await keyword_extract.expand(
+            tech.name, tech.description or "", keywords,
+            [it for _, it in patent_search.unique_items(results)])
+    except Exception as e:
+        logger.warning("키워드 확장 실패, 건너뜀: %s", e)
+        return []
+    return await _search_all(db, extra, PAGES, core) if extra else []
 
 
 def _merge(db: Session, tech: Technology, matched: dict, now: datetime) -> dict:
@@ -121,6 +141,10 @@ async def scan(db: Session, tech: Technology, onboard: bool = False) -> dict:
         raise ScanIncomplete("검색 키워드가 없습니다. 기술을 먼저 저장하세요.")
 
     results, new_core = await search_in_core(db, tech, keywords, PAGES)
+    if new_core:
+        more = await _expand(db, tech, keywords, results, new_core)
+        results += more
+        keywords = keywords + [r["word"] for r in more]
     applicants, kw_hits, patents = patent_search.aggregate_applicants(results)
     matched = patent_search.match_companies(db, applicants, kw_hits, patents)
 
@@ -132,6 +156,7 @@ async def scan(db: Session, tech: Technology, onboard: bool = False) -> dict:
     tech.last_scanned_at = now
     tech.keyword_stats = json.dumps(searched, ensure_ascii=False)
     if new_core:
+        tech.keywords = json.dumps(keywords, ensure_ascii=False)
         tech.ipc_core = json.dumps(new_core, ensure_ascii=False)
     db.commit()
 
