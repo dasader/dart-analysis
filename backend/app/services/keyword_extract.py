@@ -69,10 +69,10 @@ SYSTEM = """당신은 특허 검색 전문가입니다. 주어진 기술 설명�
 
 JSON만 출력하세요: {"keywords": ["...", "..."]}"""
 
-def _call(description: str) -> str:
+def _call(contents: str) -> str:
     r = gemini().models.generate_content(
         model=MODEL,
-        contents=f"기술 설명:\n{description}",
+        contents=contents,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM,
             # thinking 토큰이 이 예산을 함께 쓴다 — 3.8 MEDIUM 실측 출력+thinking 평균 647이라
@@ -90,6 +90,15 @@ def _call(description: str) -> str:
     return r.text or ""
 
 
+def _parse(raw: str) -> list[str]:
+    if not raw.strip():
+        # thinking 토큰이 max_output_tokens를 다 쓰면 본문이 빈 채로 온다.
+        # 그냥 두면 JSONDecodeError("Expecting value")가 나 원인이 드러나지 않는다
+        raise ValueError("모델이 빈 응답을 돌려줬습니다 (thinking 예산 초과 가능 — "
+                         "max_output_tokens를 올리거나 thinking_level을 낮추세요)")
+    return json.loads(raw).get("keywords") or []
+
+
 def _clean(keywords: list[str]) -> list[str]:
     """길이 규칙에 맞는 것만 남긴다. 모델이 규칙을 어겨도 검색이 망가지지 않게."""
     out, seen = [], set()
@@ -105,16 +114,93 @@ def _clean(keywords: list[str]) -> list[str]:
     return out
 
 
+# 같은 설명으로 **두 번 뽑아 합친다**(쿼리 앙상블). 한 벌은 알려진 적합 DART 기업의 절반쯤만
+# 찾는다 — 6개 기술에서 키워드 세트 11~13벌이 찾은 적합 기업을 합쳐 정답으로 두면 세트 1벌의
+# 재현율이 24~53%, 2벌 합이 38~69%였다. 회차마다 다른 각도를 고르기 때문이다.
+# 늘어난 키워드는 스캔이 키워드당 1페이지만 받아 상쇄한다(tech_scan.PAGES) — 같은 호출 8회면
+# 키워드 8개 × 1페이지가 4개 × 2페이지보다 기업을 더 찾았다(전고체 58 vs 56%, 세포 37 vs 21%)
+SAMPLES = 2
+
+
 async def extract(description: str) -> list[str]:
-    """기술 설명 → 검색 키워드. 실패하면 예외 대신 빈 목록을 주지 않는다(호출부가 알아야 한다)."""
-    raw = await asyncio.to_thread(_call, description)
-    if not raw.strip():
-        # thinking 토큰이 max_output_tokens를 다 쓰면 본문이 빈 채로 온다.
-        # 그냥 두면 JSONDecodeError("Expecting value")가 나 원인이 드러나지 않는다
-        raise ValueError("모델이 빈 응답을 돌려줬습니다 (thinking 예산 초과 가능 — "
-                         "max_output_tokens를 올리거나 thinking_level을 낮추세요)")
-    data = json.loads(raw)
-    keywords = _clean(data.get("keywords") or [])
+    """기술 설명 → 검색 키워드. 실패하면 빈 목록 대신 예외를 던진다(호출부가 알아야 한다).
+    한 회차가 실패해도 나머지로 간다 — 전부 실패할 때만 예외."""
+    raws = await asyncio.gather(*[asyncio.to_thread(_call, f"기술 설명:\n{description}")
+                                  for _ in range(SAMPLES)], return_exceptions=True)
+    merged, errors = [], []
+    for raw in raws:
+        try:
+            if isinstance(raw, BaseException):
+                raise raw
+            merged += _parse(raw)
+        except Exception as e:
+            errors.append(e)
+            logger.warning("키워드 도출 1회 실패: %s", e)
+    keywords = _clean(merged)
     if not keywords:
-        raise ValueError(f"쓸 만한 검색어를 만들지 못했습니다. 모델 응답: {raw[:200]}")
+        raise ValueError(f"쓸 만한 검색어를 만들지 못했습니다: {errors or raws}")
     return keywords
+
+
+# ── 적합 문헌 피드백으로 키워드 확장(Rocchio식 relevance feedback) ──────────────
+# 첫 스캔의 결과에서 기술 설명과 가장 가까운 문헌을 골라, 그 제목·초록에 **실제로 나오는
+# 용어**로 검색어를 더 만든다. 모델이 모르는 명세서 표현(습식합성법·황화수소 가스·
+# 다층전극 막전극접합체)을 얻는다. 6개 기술 실측(키워드 3개 추가, IPC 코어 제한 1페이지):
+# 적합 DART 기업 81 → 95곳, 부적합 15 → 25곳(늘어난 부적합은 온보딩 적합도 판정이
+# 뒤로 민다 — 앙상블과 합쳐도 P@10 53/60 그대로). 연료전지 +7곳·전고체 +5곳으로 검색이
+# 깨끗한 분야에서 강하고, 노이즈가 많은 분야(전력반도체)에서는 거의 이득이 없다.
+# 문헌 선택은 라벨 없이 임베딩 유사도로 한다(적합/부적합 구분 AUC 0.79~0.96).
+EXPAND_N = 3
+EXPAND_DOCS = 30
+EMBED_MODEL = "gemini-embedding-001"
+
+EXPAND_PROMPT = """아래는 이 기술 키워드로 검색해 얻은 특허 중 기술 설명과 가장 가까운 문헌들입니다.
+기존 검색어가 놓쳤을 **다른 각도**의 검색어 {n}개를 새로 만드세요.
+- 반드시 아래 문헌의 제목·초록에 **실제로 나오는 용어**를 쓰세요(명세서 표현 그대로)
+- 기존 검색어와 겹치는 말만으로 된 검색어는 만들지 마세요
+- 나머지 규칙은 시스템 지시를 따르세요
+
+기술: {name}
+설명: {description}
+기존 검색어: {keywords}
+
+문헌:
+{docs}"""
+
+
+def _embed(texts: list[str], task: str) -> list[list[float]]:
+    out = []
+    for i in range(0, len(texts), 100):     # 요청당 100건 상한
+        r = gemini().models.embed_content(
+            model=EMBED_MODEL, contents=texts[i:i + 100],
+            config=types.EmbedContentConfig(task_type=task, output_dimensionality=768))
+        out += [e.values for e in r.embeddings]
+    return out
+
+
+def _closest(name: str, description: str, items: list[dict], n: int) -> list[dict]:
+    docs = _embed([f"{it['title']}\n{it['abstract'][:600]}" for it in items], "RETRIEVAL_DOCUMENT")
+    q = _embed([f"{name}: {description}"], "RETRIEVAL_QUERY")[0]
+    qn = sum(x * x for x in q) ** .5
+
+    def cos(d):
+        return sum(x * y for x, y in zip(d, q)) / ((sum(x * x for x in d) ** .5) * qn or 1)
+    ranked = sorted(zip(map(cos, docs), range(len(items))), reverse=True)
+    return [items[i] for _, i in ranked[:n]]
+
+
+def _expand_sync(name: str, description: str, keywords: list[str], items: list[dict]) -> list[str]:
+    top = _closest(name, description, items, EXPAND_DOCS)
+    prompt = EXPAND_PROMPT.format(
+        n=EXPAND_N, name=name, description=description, keywords=", ".join(keywords),
+        docs="\n".join(f"- {it['title']} / {it['abstract'][:200]}" for it in top))
+    have = set(keywords)
+    return [w for w in _clean(_parse(_call(prompt))) if w not in have][:EXPAND_N]
+
+
+async def expand(name: str, description: str, keywords: list[str], items: list[dict]) -> list[str]:
+    """검색 결과 특허(items)에서 새 검색어를 캔다. 기존 키워드와 같은 것은 뺀다."""
+    items = [it for it in items if it.get("title")]
+    if not items:
+        return []
+    return await asyncio.to_thread(_expand_sync, name, description, keywords, items)

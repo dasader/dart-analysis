@@ -148,19 +148,64 @@ def test_scan_learns_ipc_core_then_searches_inside_it(db, tech, monkeypatch):
         items = [{"app_no": f"10-{i}", "ipc": "H01M 10/0562", "applicants": ["가"],
                   "title": "t", "app_date": "20240101", "status": "공개", "abstract": ""}
                  for i in range(10)]
-        items.append({"app_no": "10-x", "ipc": "G06Q 50/08", "applicants": ["잡음"],
-                      "title": "t", "app_date": "20240101", "status": "공개", "abstract": ""})
+        if not ipc:     # 제한 검색이면 KIPRIS가 코어 밖 특허를 주지 않는다
+            items.append({"app_no": "10-x", "ipc": "G06Q 50/08", "applicants": ["잡음"],
+                          "title": "t", "app_date": "20240101", "status": "공개", "abstract": ""})
         return {"word": word, "total": len(items), "items": items, "pages_fetched": 1}
 
+    async def fake_expand(name, description, keywords, items):
+        assert items and keywords == ["황화물계 고체전해질"]
+        return ["아지로다이트"]
+
     monkeypatch.setattr(patent_search, "search", fake_search)
+    monkeypatch.setattr(tech_scan.keyword_extract, "expand", fake_expand)
     asyncio.run(tech_scan.scan(db, tech))
-    assert calls == [None]
+    # 기존 키워드는 제한 없이, 확장 키워드는 새로 잡은 코어 안에서
+    assert calls == [None, ["H01M 10"]]
     assert tech_scan.get_ipc_core(tech) == ["H01M 10"]
+    assert tech_scan.get_keywords(tech) == ["황화물계 고체전해질", "아지로다이트"]
     # 사후로 걸러져 잡음 출원인은 들어오지 않는다
     assert {tc.applicant_name for tc in tech.companies} == {"가"}
 
+    # 코어가 있으면 확장하지 않는다 — 저장된 키워드 2개를 코어 안에서만 검색
     asyncio.run(tech_scan.scan(db, tech))
-    assert calls[1] == ["H01M 10"]
+    assert calls[2:] == [["H01M 10"], ["H01M 10"]]
+    assert tech_scan.get_keywords(tech) == ["황화물계 고체전해질", "아지로다이트"]
+
+
+def test_scan_survives_expand_failure(db, tech, monkeypatch):
+    """확장이 실패해도 기존 키워드로 스캔은 저장된다."""
+    import asyncio
+    from app.services import patent_search
+
+    async def fake_search(db, word, pages=1, rows=100, ipc=None):
+        items = [{"app_no": "10-1", "ipc": "H01M 10/0562", "applicants": ["가"], "title": "t",
+                  "app_date": "20240101", "status": "공개", "abstract": ""}]
+        return {"word": word, "total": 1, "items": items, "pages_fetched": 1}
+
+    async def boom(*a):
+        raise RuntimeError("gemini down")
+
+    monkeypatch.setattr(patent_search, "search", fake_search)
+    monkeypatch.setattr(tech_scan.keyword_extract, "expand", boom)
+    asyncio.run(tech_scan.scan(db, tech))
+    assert tech_scan.get_keywords(tech) == ["황화물계 고체전해질"]
+    assert tech_scan.get_ipc_core(tech) == ["H01M 10"]
+
+
+def test_extract_merges_samples_and_survives_one_failure(monkeypatch):
+    """두 번 뽑아 합치고(중복 제거), 한 회차가 실패해도 나머지로 간다."""
+    import asyncio
+    from app.services import keyword_extract as ke
+    outs = iter(['{"keywords": ["황화물계 고체전해질", "아지로다이트 고체전해질"]}',
+                 '{"keywords": ["황화물계 고체전해질", "황화리튬 오황화이인"]}'])
+    monkeypatch.setattr(ke, "_call", lambda c: next(outs))
+    assert asyncio.run(ke.extract("설명")) == [
+        "황화물계 고체전해질", "아지로다이트 고체전해질", "황화리튬 오황화이인"]
+
+    outs2 = iter(["", '{"keywords": ["황화리튬 오황화이인"]}'])
+    monkeypatch.setattr(ke, "_call", lambda c: next(outs2))
+    assert asyncio.run(ke.extract("설명")) == ["황화리튬 오황화이인"]
 
 
 def test_keyword_edit_clears_ipc_core(db, tech):
