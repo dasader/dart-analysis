@@ -4,11 +4,11 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import settings
-from app.constants import ANALYSIS_TYPES, AnalysisStatus, REPORT_TYPE_ANNUAL
+from app.constants import REPORT_TYPE_ANNUAL
 from app.database import SessionLocal
-from app.models import Analysis, Company, Report, Technology
+from app.models import Company, Report, Technology
 from app.services import app_settings
-from app.services.analysis_queue import enqueue
+from app.services.analysis_queue import queue_report
 from app.services.batch_poller import poll_batches
 from app.services import tech_scan
 from app.services.dart_client import list_reports, parse_filing_date
@@ -60,24 +60,11 @@ async def check_and_download_reports():
                     fallback_year = filing.year if filing else max_year + 1
                     report = await create_report_from_dart(db, company, dr, fallback_year)
                     if app_settings.get(db, "scheduler_auto_analyze"):
-                        _request_analysis(db, report)
+                        queue_report(db, report)
             except Exception:
-                continue
+                logger.exception("보고서 자동 수집 실패: %s", company.corp_name)
     finally:
         db.close()
-
-
-def _request_analysis(db, report: Report) -> None:
-    """신규 수집 보고서의 3종 분석을 pending으로 만들고 큐에 투입."""
-    for atype in ANALYSIS_TYPES:
-        db.add(Analysis(
-            company_id=report.company_id,
-            report_id=report.id,
-            analysis_type=atype,
-            status=AnalysisStatus.PENDING,
-        ))
-    db.commit()
-    enqueue(report.id)
 
 
 async def scan_technologies():

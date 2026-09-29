@@ -3,6 +3,7 @@ import { Link, Outlet } from "react-router-dom";
 import { fetchExtractionFailures, fetchSchedulerStatus } from "../api/client";
 import type { SchedulerStatus } from "../types";
 import { useAdmin } from "../context/AdminContext";
+import { usePolling } from "../hooks/usePolling";
 
 export default function Layout() {
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
@@ -14,15 +15,11 @@ export default function Layout() {
   }, []);
 
   // 구역 추출 실패는 보고서 서식 변경 신호 — 어느 화면에 있든 눈에 띄어야 한다
+  const checkFailures = () => fetchExtractionFailures().then((f) => setFailureCount(f.length));
   useEffect(() => {
-    const check = () =>
-      fetchExtractionFailures()
-        .then((f) => setFailureCount(f.length))
-        .catch(() => {});
-    check();
-    const timer = setInterval(check, 60000);
-    return () => clearInterval(timer);
+    checkFailures().catch(() => {});
   }, []);
+  usePolling(checkFailures, 60000);
 
   const { isAdmin, login, logout } = useAdmin();
 
@@ -35,7 +32,6 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      {/* Top Navigation */}
       <header className="no-print sticky top-0 z-50 border-b border-border bg-navy text-white shadow-sm">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
           <Link
@@ -99,12 +95,10 @@ export default function Layout() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
         <Outlet />
       </main>
 
-      {/* Footer */}
       <footer className="no-print mt-4 border-t border-border">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <span className="text-xs font-medium text-text-tertiary">

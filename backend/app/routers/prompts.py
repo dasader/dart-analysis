@@ -34,7 +34,6 @@ def update_prompt(
 ):
     template = _get_template_or_404(db, analysis_type)
     template.system_prompt = body.system_prompt
-    template.user_prompt_template = body.user_prompt_template
     db.commit()
     db.refresh(template)
     return template

@@ -6,11 +6,9 @@ import ColorPicker from "../components/ColorPicker";
 import { getErrorMessage } from "../lib/errors";
 import type { Tag } from "../types";
 import { TAG_COLORS } from "../types";
-import AdminButton from "../components/AdminButton";
-import { useAdmin } from "../context/AdminContext";
+import AdminButton, { AdminNotice } from "../components/AdminButton";
 
 export default function TagSettings() {
-  const { isAdmin } = useAdmin();
   const [tags, setTags] = useState<Tag[]>([]);
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState<string>(TAG_COLORS[0]);
@@ -78,11 +76,7 @@ export default function TagSettings() {
         </p>
       </div>
 
-      {!isAdmin && (
-        <div className="mb-6 rounded-lg border border-warning/40 bg-warning-bg px-4 py-3 text-sm text-warning">
-          관리 기능을 사용하려면 우측 상단에서 관리자 로그인이 필요합니다.
-        </div>
-      )}
+      <AdminNotice />
 
       {error && (
         <div className="mb-4 rounded-lg bg-danger-bg px-4 py-3 text-sm text-danger">

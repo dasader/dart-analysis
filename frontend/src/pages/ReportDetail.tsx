@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   analyzeReport,
@@ -17,14 +17,60 @@ import {
 } from "../types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Analysis, AnalysisType, Company, Report } from "../types";
+import { analysesEqual, isInProgress } from "../lib/status";
+import { usePolling } from "../hooks/usePolling";
+import type { Analysis, AnalysisStatus, AnalysisType, Company, Report } from "../types";
+import { formatDate } from "../lib/format";
 
-const STATUS_BADGE: Record<string, { text: string; cls: string }> = {
+const STATUS_BADGE: Record<AnalysisStatus, { text: string; cls: string }> = {
   pending: { text: "대기", cls: "bg-gray-100 text-text-tertiary" },
   running: { text: "처리중", cls: "bg-warning-bg text-warning" },
   completed: { text: "완료", cls: "bg-success-bg text-success" },
   failed: { text: "실패", cls: "bg-danger-bg text-danger" },
 };
+
+/** 인쇄할 때만 보이는 통합 보고서. 화면에서는 숨어 있지만 탭 전환·폴링마다 마크다운 3편을
+ *  다시 파싱하지 않도록 memo로 분리한다(분석이 바뀔 때만 다시 그린다). 공용 Markdown을 쓰지 않는 건
+ *  prose 스타일이 인쇄 CSS와 섞이기 때문이다. */
+const PrintReport = memo(function PrintReport({
+  company,
+  report,
+  analyses,
+}: {
+  company: Company;
+  report: Report;
+  analyses: Analysis[];
+}) {
+  return (
+    <div className="print-only">
+      <div className="print-cover">
+        <h1 className="print-company">{company.corp_name}</h1>
+        <p className="print-subtitle">
+          {report.fiscal_year}년 사업보고서 AI 분석
+        </p>
+        <p className="print-meta">
+          분석일:{" "}
+          {formatDate(analyses[0].updated_at)}
+        </p>
+      </div>
+
+      {analyses.map((analysis, idx) => (
+        <div key={analysis.id} className={idx > 0 ? "print-page-break" : ""}>
+          <h2 className="print-section-title">
+            {idx + 1}. {PRINT_TYPE_LABELS[analysis.analysis_type]}
+          </h2>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {normalizeTables(analysis.result_summary || "")}
+          </ReactMarkdown>
+        </div>
+      ))}
+
+      <footer className="print-footer">
+        DART 사업보고서 AI 분석 보고서 — 자동 생성됨
+      </footer>
+    </div>
+  );
+});
 
 export default function ReportDetail() {
   const { id, reportId } = useParams<{ id: string; reportId: string }>();
@@ -60,16 +106,11 @@ export default function ReportDetail() {
   }, [load]);
 
   // 진행 중인 분석이 있으면 주기적으로 갱신. Batch는 분 단위라 10초 간격이면 충분하다.
-  const hasActiveJob = analyses.some(
-    (a) => a.status === "pending" || a.status === "running",
-  );
-  useEffect(() => {
-    if (!hasActiveJob) return;
-    const timer = setInterval(() => {
-      fetchReportAnalyses(rid).then(setAnalyses).catch(() => {});
-    }, 10000);
-    return () => clearInterval(timer);
-  }, [hasActiveJob, rid]);
+  const refresh = () =>
+    fetchReportAnalyses(rid).then((next) =>
+      setAnalyses((prev) => (analysesEqual(prev, next) ? prev : next)),
+    );
+  usePolling(refresh, 10000, analyses.some(isInProgress));
 
   const byType = useMemo(
     () => new Map(analyses.map((a) => [a.analysis_type, a])),
@@ -179,7 +220,7 @@ export default function ReportDetail() {
       <div className="no-print mb-6 border-b border-border">
         <div className="flex gap-0">
           {ANALYSIS_TYPE_KEYS.map((t) => {
-            const badge = STATUS_BADGE[byType.get(t)?.status ?? ""];
+            const status = byType.get(t)?.status;
             return (
               <button
                 key={t}
@@ -191,9 +232,9 @@ export default function ReportDetail() {
                 }`}
               >
                 {ANALYSIS_TYPE_LABELS[t]}
-                {badge && badge.text !== "완료" && (
-                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${badge.cls}`}>
-                    {badge.text}
+                {status && status !== "completed" && (
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${STATUS_BADGE[status].cls}`}>
+                    {STATUS_BADGE[status].text}
                   </span>
                 )}
               </button>
@@ -212,33 +253,7 @@ export default function ReportDetail() {
 
       {/* ───── 인쇄 전용 통합 보고서 ───── */}
       {printAnalyses.length > 0 && (
-        <div className="print-only">
-          <div className="print-cover">
-            <h1 className="print-company">{company.corp_name}</h1>
-            <p className="print-subtitle">
-              {report.fiscal_year}년 사업보고서 AI 분석
-            </p>
-            <p className="print-meta">
-              분석일:{" "}
-              {new Date(printAnalyses[0].updated_at).toLocaleDateString("ko-KR")}
-            </p>
-          </div>
-
-          {printAnalyses.map((analysis, idx) => (
-            <div key={analysis.id} className={idx > 0 ? "print-page-break" : ""}>
-              <h2 className="print-section-title">
-                {idx + 1}. {PRINT_TYPE_LABELS[analysis.analysis_type]}
-              </h2>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {normalizeTables(analysis.result_summary || "")}
-              </ReactMarkdown>
-            </div>
-          ))}
-
-          <footer className="print-footer">
-            DART 사업보고서 AI 분석 보고서 — 자동 생성됨
-          </footer>
-        </div>
+        <PrintReport company={company} report={report} analyses={printAnalyses} />
       )}
     </div>
   );

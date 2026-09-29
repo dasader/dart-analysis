@@ -55,7 +55,7 @@ async def run(args) -> None:
                 print(f"  {k:<24} 실패 — {e}")
                 continue
             results.append(res)
-            broad = " ← 넓음(기술 특이성 희석)" if res["total"] > patent_search.BROAD_THRESHOLD else ""
+            broad = " ← 넓음(기술 특이성 희석)" if patent_search.is_broad(res["total"]) else ""
             print(f"  {k:<24} 총 {res['total']:>7,}건 / 수집 {len(res['items']):>4}건{broad}")
 
         if not results:
@@ -64,9 +64,8 @@ async def run(args) -> None:
 
         results, _ = patent_search.core_only(results)
         applicants, kw_hits, patents = patent_search.aggregate_applicants(results)
-        m = patent_search.match_companies(db, applicants, limit=args.top, keywords=kw_hits,
-                                          patents=patents)
-        n_broad = sum(1 for r in results if r["total"] > patent_search.BROAD_THRESHOLD)
+        m = patent_search.match_companies(db, applicants, kw_hits, patents, limit=args.top)
+        n_broad = sum(1 for r in results if patent_search.is_broad(r["total"]))
         if n_broad:
             print(f"\n  ※ 넓은 키워드 {n_broad}개 포함. 아래 '키워드' 열이 1이면 "
                   f"그 키워드에서만 나온 것이라 기술 연관성이 약할 수 있습니다.")

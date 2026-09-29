@@ -19,18 +19,16 @@
 keyword_extract와 같은 실시간 경로를 쓴다.
 """
 import asyncio
-import json
 import logging
 import re
+from collections import defaultdict
 from datetime import datetime
-from functools import partial
 
-from google import genai
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.constants import AnalysisStatus
+from app.config import gemini
+from app.constants import AnalysisStatus, TechStatus
 from app.models import Analysis, Report, Technology
 from app.services import patent_search, tech_scan
 from app.services.report_service import extract_text_from_report
@@ -55,7 +53,8 @@ RND_SECTIONS = {"요약": 600, "기술 사업화 동향": 5000}
 # 상한을 늘리면 뒤쪽(관련도가 낮고 오래된 것)이 딸려 들어오는데, 10년도 더 된 특허의
 # 조성·공정을 현재 기술 개요에 섞으면 지금 무엇이 쟁점인지가 흐려진다.
 # 실측(전고체 배터리): 상위 40건의 95%가 이미 최근 10년 안이라 이 컷으로 잃는 게 거의 없다.
-MAX_PATENT_AGE_YEARS = 10
+# 값은 patent_search.RECENT_YEARS에서 바꾼다 — 여기는 프롬프트·로그 표시용 별칭이다
+MAX_PATENT_AGE_YEARS = patent_search.RECENT_YEARS
 
 # 사업보고서 보조 근거로 쓸 분석. 종속회사 변동은 기술과 무관하므로 넣지 않는다
 SUPPORT_TYPES = ("rnd", "national_tech")
@@ -148,16 +147,6 @@ SYSTEM = """당신은 기술 동향 분석가입니다. 특정 기술에 대해 
 **시사점이 마지막 절입니다.** 대학·연구소 목록은 따로 붙으므로 쓰지 마십시오."""
 
 
-_client: genai.Client | None = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
-
-
 def select_patents(results: list[dict], names: set[str],
                    this_year: int | None = None) -> list[dict]:
     """프롬프트에 실을 대표 특허. 관심 기업(추적중·등록가능)의 것을 앞세운다.
@@ -169,8 +158,7 @@ def select_patents(results: list[dict], names: set[str],
     정렬하지 않는 이유는, 관련도가 낮은 최신 특허가 관련도 높은 것을 밀어내기 때문이다.
     대신 `MAX_PATENT_AGE_YEARS`로 오래된 것을 **거른다** — 순서가 아니라 자격의 문제다.
     """
-    year = this_year if this_year is not None else datetime.utcnow().year
-    cutoff = f"{year - MAX_PATENT_AGE_YEARS}0000"
+    cutoff = patent_search.recent_cutoff(this_year)
 
     seen: set[str] = set()
     fresh: list[tuple[int, dict]] = []
@@ -258,15 +246,14 @@ def _source_text(report: Report) -> str | None:
     if not report.file_path:
         return None
     try:
-        return extract_text_from_report(report.file_path) or None
+        return extract_text_from_report(report.file_path, report.rcept_no) or None
     except Exception:
         logger.warning("원문 읽기 실패, 건너뜀: report_id=%s", report.id)
         return None
 
 
-def _mentions_in_source(report: Report, terms: list[str], limit: int = 5) -> list[str]:
-    """사업보고서 원문에서 기술 용어가 나온 대목."""
-    body = _source_text(report) if limit > 0 else None
+def _mentions_in_source(body: str | None, terms: list[str], limit: int = 5) -> list[str]:
+    """사업보고서 원문(`_source_text`)에서 기술 용어가 나온 대목."""
     if not body:
         return []
 
@@ -314,8 +301,19 @@ def _live(tech: Technology) -> list:
     (tech_scan._merge) 거르지 않으면 키워드를 바꾸기 전의 기업이 보고서에 남는다
     — 실측: 옛 키워드 '리튬 이온 전도도'로만 걸렸던 HLB제약이 전고체 보고서의 주요 기업에 올랐다."""
     at = tech.last_scanned_at
-    return [tc for tc in tech.companies
-            if not (at and tc.last_seen_at and tc.last_seen_at < at)]
+    live = [tc for tc in tech.companies if not (at and tc.last_seen_at and tc.last_seen_at < at)]
+    return sorted(live, key=lambda t: -t.patent_count)   # 표·본문·부록 모두 특허 건수순
+
+
+def _support_query(db: Session, ids: list[int], *cols):
+    """보조 근거로 쓰는 완료 분석(SUPPORT_TYPES)과 그 보고서 — 최신 회계연도가 앞에 온다.
+    본문(`_company_section`)과 출원인 표 링크(`_report_links`)가 같은 조건을 써야 링크가 어긋나지 않는다."""
+    return (db.query(*cols)
+            .join(Report, Report.id == Analysis.report_id)
+            .filter(Analysis.company_id.in_(ids),
+                    Analysis.status == AnalysisStatus.COMPLETED,
+                    Analysis.analysis_type.in_(SUPPORT_TYPES))
+            .order_by(Report.fiscal_year.desc()))
 
 
 def _company_section(db: Session, tech: Technology,
@@ -329,21 +327,23 @@ def _company_section(db: Session, tech: Technology,
     blocks: list[str] = []
     table: list[str] = []            # 「주요 기업」 표의 틀 — 행·링크·확정 단계는 코드가 정한다
     years: set[int] = set()
-    links = _report_links(db, tech)
     terms = terms or tech_terms(tech)
+    live = _live(tech)
 
-    for tc in sorted(_live(tech), key=lambda t: -t.patent_count):
-        if tc.status != "tracked" or not tc.company_id:
+    # 추적 기업의 분석을 한 번에 — 기업마다 조회하면 N+1이다. 최신 연도가 앞에 온다
+    ids = [tc.company_id for tc in live if tc.status == TechStatus.TRACKED and tc.company_id]
+    by_co: dict[int, list] = defaultdict(list)
+    if ids:
+        for a, r in _support_query(db, ids, Analysis, Report):
+            by_co[a.company_id].append((a, r))
+    links = {cid: (rows[0][1].id, rows[0][1].fiscal_year) for cid, rows in by_co.items()}
+
+    for tc in live:
+        if tc.status != TechStatus.TRACKED or not tc.company_id:
             continue
 
         name = tc.corp_name or tc.applicant_name
-        rows = (db.query(Analysis, Report)
-                .join(Report, Report.id == Analysis.report_id)
-                .filter(Analysis.company_id == tc.company_id,
-                        Analysis.status == AnalysisStatus.COMPLETED,
-                        Analysis.analysis_type.in_(SUPPORT_TYPES))
-                .order_by(Report.fiscal_year.desc())
-                .all())
+        rows = by_co.get(tc.company_id, [])
         if not rows:
             blocks.append(f"### {name}\n- **단계: 판단 불가 (확정)**\n- **사업보고서 미수집** — "
                           f"아직 수집·분석하지 않았습니다. 이 기업이 그 기술을 하지 않는다는 뜻이 아닙니다.")
@@ -352,9 +352,7 @@ def _company_section(db: Session, tech: Technology,
 
         latest_year = rows[0][1].fiscal_year
         years.add(latest_year)
-        link = links.get(tc.company_id)
-        url = f"/companies/{tc.company_id}/reports/{link[0]}" if link else ""
-        cell = f"[{link[1]}년 사업보고서]({url})" if link else "미수집"
+        url, cell = _report_cell(links, tc.company_id)
         parts = [f"### {name}\n- {latest_year}년 사업보고서 기준"
                  + (f" / 분석보고서 링크: {url}" if url else "")]
 
@@ -375,7 +373,7 @@ def _company_section(db: Session, tech: Technology,
         body = _source_text(rows[0][1])
         seen = [t for t in terms if t in body] if body else terms
         hits = mention_sentences(joined, seen, limit=3) if seen else []
-        hits += _mentions_in_source(rows[0][1], terms)
+        hits += _mentions_in_source(body, terms)
         if hits:
             parts.append("- **이 기술이 직접 언급된 대목:**\n"
                          + "\n".join(f"  - {h}" for h in hits))
@@ -399,8 +397,7 @@ def _company_section(db: Session, tech: Technology,
     # 미등록 후보에 대학·연구소를 섞었다(3회 중 2회). 코드가 아는 것은 코드가 채운다
     blocks.append("### 「주요 기업」 표 틀\n이 표를 행·순서·링크 그대로 옮기고 `?` 칸만 채우십시오.\n\n"
                   "| 기업 | 단계 | 근거 | 분석보고서 |\n|---|---|---|---|\n" + "\n".join(table))
-    cands = [tc.corp_name for tc in sorted(_live(tech), key=lambda t: -t.patent_count)
-             if tc.status == "available" and tc.corp_name]
+    cands = [tc.corp_name for tc in live if tc.status == TechStatus.AVAILABLE and tc.corp_name]
     if cands:
         blocks.append("### 등록 후보\n표 아래에 이 줄을 그대로 옮기십시오.\n\n"
                       f"등록 후보(DART 상장·미등록, 사업보고서 미수집): {', '.join(cands)}")
@@ -415,21 +412,15 @@ _PENDING = "공개"
 
 def patent_stats(results: list[dict]) -> dict[str, dict]:
     """출원인별 상태 집계. 같은 특허가 여러 키워드에 걸리면 출원번호로 접는다."""
-    seen: set[str] = set()
     stats: dict[str, dict] = {}
-    for res in results:
-        for it in res["items"]:
-            if it["app_no"] and it["app_no"] in seen:
-                continue
-            if it["app_no"]:
-                seen.add(it["app_no"])
-            for name in it["applicants"]:
-                s = stats.setdefault(name, {"total": 0, "registered": 0, "pending": 0})
-                s["total"] += 1
-                if it["status"] == _REGISTERED:
-                    s["registered"] += 1
-                elif it["status"] == _PENDING:
-                    s["pending"] += 1
+    for _, it in patent_search.unique_items(results):
+        for name in it["applicants"]:
+            s = stats.setdefault(name, {"total": 0, "registered": 0, "pending": 0})
+            s["total"] += 1
+            if it["status"] == _REGISTERED:
+                s["registered"] += 1
+            elif it["status"] == _PENDING:
+                s["pending"] += 1
     return stats
 
 
@@ -453,16 +444,19 @@ def _report_links(db: Session, tech: Technology) -> dict[int, tuple[int, int]]:
     ids = [tc.company_id for tc in tech.companies if tc.company_id]
     if not ids:
         return {}
-    rows = (db.query(Analysis.company_id, Report.id, Report.fiscal_year)
-            .join(Report, Report.id == Analysis.report_id)
-            .filter(Analysis.company_id.in_(ids),
-                    Analysis.status == AnalysisStatus.COMPLETED,
-                    Analysis.analysis_type.in_(SUPPORT_TYPES))
-            .order_by(Report.fiscal_year.desc()).all())
     out: dict[int, tuple[int, int]] = {}
-    for cid, rid, year in rows:
+    for cid, rid, year in _support_query(db, ids, Analysis.company_id, Report.id, Report.fiscal_year):
         out.setdefault(cid, (rid, year))      # 정렬이 내림차순이라 첫 항목이 최신
     return out
+
+
+def _report_cell(links: dict[int, tuple[int, int]], company_id: int | None) -> tuple[str, str]:
+    """(분석보고서 URL, 표의 「분석보고서」 칸). 없으면 ("", "미수집")."""
+    link = links.get(company_id) if company_id else None
+    if not link:
+        return "", "미수집"
+    url = f"/companies/{company_id}/reports/{link[0]}"
+    return url, f"[{link[1]}년 사업보고서]({url})"
 
 
 def _applicant_table(db: Session, tech: Technology,
@@ -477,21 +471,19 @@ def _applicant_table(db: Session, tech: Technology,
     주지 않으면 모델이 둘 다 "사업보고서에 언급 없음"으로 써서 전업 배터리 회사가
     그 기술을 안 하는 것처럼 읽힌다(실측: LG에너지솔루션).
     """
-    rows = sorted(_live(tech), key=lambda t: -t.patent_count)[:30]
+    rows = _live(tech)[:30]
     if not rows:
         return "(스캔 결과가 없습니다)"
 
     links = _report_links(db, tech)
-    label = {"tracked": "추적 중", "available": "미등록(DART 있음)", "excluded": "사업보고서 없음"}
+    label = {TechStatus.TRACKED: "추적 중", TechStatus.AVAILABLE: "미등록(DART 있음)",
+             TechStatus.EXCLUDED: "사업보고서 없음"}
     out = ["| 출원인 | DART 기업명 | 특허 합계 | 등록 | 공개(심사중) | 키워드 적중 | 상태 | 분석보고서 |",
            "|---|---|---|---|---|---|---|---|"]
     for tc in rows:
-        try:
-            hits = len(json.loads(tc.keyword_hits or "[]"))
-        except json.JSONDecodeError:
-            hits = 0
+        hits = len(tech_scan.json_list(tc.keyword_hits))
         status = label.get(tc.status, tc.status)
-        if tc.status == "excluded" and tc.exclude_reason:
+        if tc.status == TechStatus.EXCLUDED and tc.exclude_reason:
             status = f"{status} — {tc.exclude_reason}"
 
         s = (stats or {}).get(tc.applicant_name) or {}
@@ -501,9 +493,7 @@ def _applicant_table(db: Session, tech: Technology,
         reg = s.get("registered", "?")
         pend = s.get("pending", "?")
 
-        link = links.get(tc.company_id) if tc.company_id else None
-        cell = (f"[{link[1]}년 사업보고서](/companies/{tc.company_id}/reports/{link[0]})"
-                if link else "미수집")
+        _, cell = _report_cell(links, tc.company_id)
 
         out.append(f"| {tc.applicant_name} | {tc.corp_name or '-'} | {total} | "
                    f"{reg} | {pend} | {hits} | {status} | {cell} |")
@@ -520,8 +510,8 @@ def appendix(tech: Technology, stats: dict[str, dict]) -> str:
     맡기면 틀린다 — 실측(3.5-flash-lite 3회): 공개 건수를 `합계−등록`으로 계산해 13곳을
     틀렸고(거절·취하가 빠진다), 제목을 "참고 — 참고 — 산업 밖 주체"로 써서 화면 접기가 풀렸다."""
     lines = []
-    for tc in sorted(_live(tech), key=lambda t: -t.patent_count)[:30]:
-        if tc.status != "excluded":
+    for tc in _live(tech)[:30]:
+        if tc.status != TechStatus.EXCLUDED:
             continue
         s = stats.get(tc.applicant_name) or {}
         lines.append(f"- {tc.applicant_name} — {s.get('total', tc.patent_count)}건"
@@ -561,7 +551,7 @@ def build_prompt(tech: Technology, results: list[dict], company_md: str,
                  items: list[dict] | None = None) -> str:
     searched = "\n".join(
         f"- {r['word']} — 총 {r['total']:,}건"
-        + ("  ※넓은 키워드(기술 특이성이 희석됨)" if r["total"] > patent_search.BROAD_THRESHOLD else "")
+        + ("  ※넓은 키워드(기술 특이성이 희석됨)" if patent_search.is_broad(r["total"]) else "")
         for r in results)
     items = items if items is not None else select_patents(results, names)
 
@@ -600,7 +590,7 @@ def build_prompt(tech: Technology, results: list[dict], company_md: str,
 
 
 def _call(prompt: str) -> str:
-    r = _get_client().models.generate_content(
+    r = gemini().models.generate_content(
         model=MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
@@ -616,7 +606,7 @@ def _call(prompt: str) -> str:
 def assemble(db: Session, tech: Technology, results: list[dict]) -> tuple[str, str, str]:
     """검색 결과 → (프롬프트, 근거 범위 한 줄, 부록). 검색과 분리해 두면 캐시로 재현 실험을 할 수 있다."""
     names = {tc.applicant_name for tc in _live(tech)
-             if tc.status in ("tracked", "available")}
+             if tc.status != TechStatus.EXCLUDED}
     stats = patent_stats(results)                   # 기업 집계는 기간 제한 없이 전체
     items = select_patents(results, names)          # 초록 재료는 최근분만, 범위도 이걸로 잰다
     span = date_span(items)
@@ -649,11 +639,11 @@ async def generate(db: Session, tech: Technology) -> str:
     except tech_scan.ScanIncomplete as e:
         raise ValueError(f"특허 검색이 실패해 보고서를 만들 수 없습니다: {e}") from e
 
-    prompt, basis, tail = assemble(db, tech, results)
+    # 원문 ZIP 수십 개를 풀고 정규식을 돌리므로 스레드로 넘긴다 — 이벤트 루프(큐 워커·API)를 막지 않게
+    prompt, basis, tail = await asyncio.to_thread(assemble, db, tech, results)
     logger.info("기술 보고서 프롬프트 %d자 (기술=%s, 근거=%s)", len(prompt), tech.name, basis)
 
-    loop = asyncio.get_running_loop()
-    md = await loop.run_in_executor(None, partial(_call, prompt))
+    md = await asyncio.to_thread(_call, prompt)
     if not md.strip():
         raise ValueError("모델이 빈 응답을 반환했습니다.")
 

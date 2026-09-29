@@ -1,49 +1,44 @@
 import { useEffect, useState } from "react";
 import { fetchPrompts, updatePrompt } from "../api/client";
 import { getErrorMessage } from "../lib/errors";
-import AdminButton from "../components/AdminButton";
+import AdminButton, { AdminNotice } from "../components/AdminButton";
 import SettingToggles from "../components/SettingToggles";
 import BackupPanel from "../components/BackupPanel";
-import { useAdmin } from "../context/AdminContext";
 import type { PromptTemplate } from "../types";
 
 export default function PromptSettings() {
-  const { isAdmin } = useAdmin();
   const [prompts, setPrompts] = useState<PromptTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
-  // 편집 상태를 별도로 관리
-  const [edits, setEdits] = useState<
-    Record<string, { system_prompt: string; user_prompt_template: string }>
-  >({});
+  // 편집 중인 시스템 프롬프트(분석 유형별)
+  const [edits, setEdits] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetchPrompts()
       .then((data) => {
         setPrompts(data);
-        const initial: typeof edits = {};
-        for (const p of data) {
-          initial[p.analysis_type] = {
-            system_prompt: p.system_prompt,
-            user_prompt_template: p.user_prompt_template,
-          };
-        }
-        setEdits(initial);
+        setEdits(Object.fromEntries(data.map((p) => [p.analysis_type, p.system_prompt])));
       })
       .finally(() => setLoading(false));
   }, []);
 
+  // 저장 표시는 2초 뒤 지운다 — 연달아 저장해도 앞 타이머가 새 표시를 일찍 지우지 않게 effect로
+  useEffect(() => {
+    if (!saved) return;
+    const t = setTimeout(() => setSaved(null), 2000);
+    return () => clearTimeout(t);
+  }, [saved]);
+
   const handleSave = async (analysisType: string) => {
-    const edit = edits[analysisType];
-    if (!edit) return;
+    const systemPrompt = edits[analysisType];
+    if (!systemPrompt) return;
     setSaving(analysisType);
     setSaved(null);
     try {
-      await updatePrompt(analysisType, edit);
+      await updatePrompt(analysisType, { system_prompt: systemPrompt });
       setSaved(analysisType);
-      setTimeout(() => setSaved(null), 2000);
     } catch (e) {
       alert(getErrorMessage(e));
     } finally {
@@ -66,38 +61,11 @@ export default function PromptSettings() {
         </p>
       </div>
 
-      {!isAdmin && (
-        <div className="mb-6 rounded-lg border border-warning/40 bg-warning-bg px-4 py-3 text-sm text-warning">
-          관리 기능을 사용하려면 우측 상단에서 관리자 로그인이 필요합니다.
-        </div>
-      )}
+      <AdminNotice />
 
       <SettingToggles />
 
       <BackupPanel />
-
-      {/* 플레이스홀더 안내 */}
-      <div className="mb-6 rounded-lg border border-border bg-surface px-5 py-4">
-        <h3 className="mb-2 text-sm font-semibold text-text-primary">
-          사용 가능한 플레이스홀더
-        </h3>
-        <div className="flex flex-wrap gap-3 text-sm">
-          <code className="rounded bg-background px-2 py-1 font-mono text-xs text-accent">
-            {"{corp_name}"}
-          </code>
-          <span className="text-text-secondary">기업명</span>
-          <code className="rounded bg-background px-2 py-1 font-mono text-xs text-accent">
-            {"{fiscal_year}"}
-          </code>
-          <span className="text-text-secondary">사업연도</span>
-          <code className="rounded bg-background px-2 py-1 font-mono text-xs text-accent">
-            {"{report_text}"}
-          </code>
-          <span className="text-text-secondary">
-            보고서 전문 (유저 프롬프트에서 사용)
-          </span>
-        </div>
-      </div>
 
       {/* 프롬프트 카드들 */}
       <div className="space-y-6">
@@ -133,39 +101,11 @@ export default function PromptSettings() {
                   시스템 프롬프트
                 </label>
                 <textarea
-                  value={edits[p.analysis_type]?.system_prompt ?? ""}
+                  value={edits[p.analysis_type] ?? ""}
                   onChange={(e) =>
-                    setEdits((prev) => ({
-                      ...prev,
-                      [p.analysis_type]: {
-                        ...prev[p.analysis_type],
-                        system_prompt: e.target.value,
-                      },
-                    }))
+                    setEdits((prev) => ({ ...prev, [p.analysis_type]: e.target.value }))
                   }
                   rows={12}
-                  className="w-full rounded-lg border border-border bg-background px-4 py-3 font-mono text-sm leading-relaxed text-text-primary outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent/20"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-text-secondary">
-                  유저 프롬프트 템플릿
-                </label>
-                <textarea
-                  value={
-                    edits[p.analysis_type]?.user_prompt_template ?? ""
-                  }
-                  onChange={(e) =>
-                    setEdits((prev) => ({
-                      ...prev,
-                      [p.analysis_type]: {
-                        ...prev[p.analysis_type],
-                        user_prompt_template: e.target.value,
-                      },
-                    }))
-                  }
-                  rows={6}
                   className="w-full rounded-lg border border-border bg-background px-4 py-3 font-mono text-sm leading-relaxed text-text-primary outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent/20"
                 />
               </div>

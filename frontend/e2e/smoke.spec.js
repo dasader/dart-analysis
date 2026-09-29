@@ -82,10 +82,12 @@ test('기술: 목록 렌더 + 등록은 관리자만', async ({ page }) => {
     json: [{ id: 1, name: '전고체 배터리', description: '설명', keywords: ['황화물계 고체전해질'],
              max_companies: 3, is_active: true, last_scanned_at: '2026-08-15T00:00:00',
              created_at: '2026-08-15T00:00:00',
-             tracked_count: 3, available_count: 6, excluded_count: 21 }] }))
+             tracked_count: 3, available_count: 6, excluded_count: 21,
+             keyword_stats: [], ipc_core: [] }] }))
 
   await page.goto('/')
-  await page.getByRole('link', { name: '기술', exact: true }).click()
+  // 기업 목록 본문에도 '기술' 링크가 있어 상단 메뉴로 좁힌다
+  await page.getByRole('banner').getByRole('link', { name: '기술', exact: true }).click()
   await expect(page).toHaveURL(/\/technologies$/)
   await expect(page.getByRole('link', { name: '전고체 배터리' })).toBeVisible()
   // 미로그인 상태에서는 등록이 잠긴다
@@ -106,6 +108,7 @@ test('기술 상세: 상태별로 나눠 보여준다', async ({ page }) => {
       keywords: ['황화물계 고체전해질'], max_companies: 3, is_active: true,
       last_scanned_at: '2026-08-15T00:00:00', created_at: '2026-08-15T00:00:00',
       tracked_count: 1, available_count: 1, excluded_count: 1,
+      keyword_stats: [], ipc_core: [],
       companies: [
         company({ id: 1, company_id: 7, corp_name: 'LG화학',
                   applicant_name: '주식회사 엘지화학', patents: 16, kws: ['a', 'b'],
@@ -180,4 +183,25 @@ test('분석 현황 화면에 콘솔 에러 없음', async ({ page }) => {
   page.on('pageerror', e => errors.push(String(e)))
   await page.goto('/settings/batches', { waitUntil: 'networkidle' })
   expect(errors, '브라우저 콘솔 에러').toEqual([])
+})
+
+test('기업 수정 창은 연 기업의 값으로 채워진다', async ({ page }) => {
+  // key 없이 한 번만 만들어 두면 입력칸 초기값이 빈칸·직전 기업 값으로 남아
+  // 저장 시 이름과 활성 여부를 덮어썼다(비활성 기업이 다시 켜져 자동 수집 비용이 나간다)
+  const co = (id, name, active) => ({ id, corp_code: `0000000${id}`, corp_name: name, stock_code: null,
+    jurir_no: null, is_active: active, created_at: '2026-01-01T00:00:00',
+    updated_at: '2026-01-01T00:00:00', report_count: 0, latest_analysis_date: null, tags: [] })
+  await page.route('**/api/companies', r => r.fulfill({ json: [co(1, '가기업', true), co(2, '나기업', false)] }))
+  await page.route('**/api/tags', r => r.fulfill({ json: [] }))
+  await page.goto('/')
+  const edit = (name) => page.getByRole('row', { name: new RegExp(name) }).getByRole('button', { name: '수정' })
+  const nameInput = page.locator('form input[type="text"]').first()
+
+  await edit('가기업').click()
+  await expect(nameInput).toHaveValue('가기업')
+  await page.getByRole('button', { name: '취소' }).click()
+
+  await edit('나기업').click()
+  await expect(nameInput).toHaveValue('나기업')
+  await expect(page.locator('form input[type="checkbox"]')).not.toBeChecked()
 })

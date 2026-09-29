@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchAppSettings, updateAppSetting } from "../api/client";
 import { getErrorMessage } from "../lib/errors";
-import { useAdmin } from "../context/AdminContext";
+import AdminButton from "./AdminButton";
 import type { AppSetting } from "../types";
 
 /** 끄면 비용이 크게 늘어나는 설정 — 확인을 한 번 받는다 */
@@ -11,7 +11,6 @@ const COST_WARNING: Record<string, string> = {
 };
 
 export default function SettingToggles() {
-  const { isAdmin } = useAdmin();
   const [items, setItems] = useState<AppSetting[]>([]);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,20 +63,19 @@ export default function SettingToggles() {
               <p className="mt-0.5 text-sm text-text-secondary">{item.description}</p>
               <span className="font-mono text-xs text-text-tertiary">{item.key}</span>
             </div>
-            <button
+            <AdminButton
               type="button"
               role="switch"
               aria-checked={item.value}
               aria-label={item.label}
-              disabled={!isAdmin || saving === item.key}
-              title={isAdmin ? undefined : "관리자 로그인이 필요합니다"}
+              disabled={saving === item.key}
               onClick={() => toggle(item)}
-              className={`mt-1 flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`mt-1 flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors ${
                 item.value ? "justify-end bg-accent" : "justify-start bg-slate-400"
               }`}
             >
               <span className="block h-5 w-5 rounded-full bg-white shadow" />
-            </button>
+            </AdminButton>
           </div>
         ))}
       </div>

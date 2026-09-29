@@ -12,12 +12,10 @@ import asyncio
 import json
 import logging
 import re
-from functools import partial
 
-from google import genai
 from google.genai import types
 
-from app.config import settings
+from app.config import gemini
 
 logger = logging.getLogger(__name__)
 
@@ -71,18 +69,8 @@ SYSTEM = """당신은 특허 검색 전문가입니다. 주어진 기술 설명�
 
 JSON만 출력하세요: {"keywords": ["...", "..."]}"""
 
-_client: genai.Client | None = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
-
-
 def _call(description: str) -> str:
-    r = _get_client().models.generate_content(
+    r = gemini().models.generate_content(
         model=MODEL,
         contents=f"기술 설명:\n{description}",
         config=types.GenerateContentConfig(
@@ -119,8 +107,7 @@ def _clean(keywords: list[str]) -> list[str]:
 
 async def extract(description: str) -> list[str]:
     """기술 설명 → 검색 키워드. 실패하면 예외 대신 빈 목록을 주지 않는다(호출부가 알아야 한다)."""
-    loop = asyncio.get_running_loop()
-    raw = await loop.run_in_executor(None, partial(_call, description))
+    raw = await asyncio.to_thread(_call, description)
     if not raw.strip():
         # thinking 토큰이 max_output_tokens를 다 쓰면 본문이 빈 채로 온다.
         # 그냥 두면 JSONDecodeError("Expecting value")가 나 원인이 드러나지 않는다

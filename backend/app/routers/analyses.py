@@ -1,56 +1,26 @@
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session, defer, load_only
 
-from app.constants import ANALYSIS_TYPES, AnalysisStatus
+from app.constants import ANALYSIS_TYPES
 from app.crud import get_or_404
 from app.database import get_db
 from app.models import Company, Report, Analysis
-from app.schemas import AnalysisRequest, AnalysisResponse, QueueStatus
-from app.services.analysis_queue import enqueue, get_queue_info
+from app.schemas import AnalysisRequest, AnalysisResponse, AnalysisState, QueueStatus
+from app.services import analysis_service as svc
+from app.services.analysis_queue import enqueue, get_queue_info, queue_report
 from app.dependencies import require_admin
 
 router = APIRouter(tags=["analyses"])
 
 
-def _reset_or_create_analysis(
-    db: Session, report: Report, analysis_type: str, existing: Analysis | None
-) -> Analysis:
-    """분석 레코드를 pending으로 리셋하거나 새로 생성한다 (커밋은 호출자 책임).
-
-    existing은 미리 조회된 레코드(없으면 None)를 받아 중복 SELECT를 피한다.
-    """
-    if existing:
-        existing.status = AnalysisStatus.PENDING
-        existing.error_message = None
-        return existing
-
-    analysis = Analysis(
-        company_id=report.company_id,
-        report_id=report.id,
-        analysis_type=analysis_type,
-        status=AnalysisStatus.PENDING,
-    )
-    db.add(analysis)
-    return analysis
-
-
-def _queue_report_types(
-    db: Session, report: Report, existing_by_type: dict, skip_completed: bool
-) -> bool:
-    """report의 분석 유형들을 pending으로 만들고, 큐 투입이 필요한지(대기 항목 존재) 반환.
-
-    skip_completed=True면 이미 완료된 유형은 건너뛴다(기업 단위 일괄 분석용).
-    """
-    has_pending = False
-    for atype in ANALYSIS_TYPES:
-        existing = existing_by_type.get(atype)
-        if skip_completed and existing and existing.status == AnalysisStatus.COMPLETED:
-            continue
-        _reset_or_create_analysis(db, report, atype, existing)
-        has_pending = True
-    return has_pending
+def _downloaded_report(db: Session, report_id: int) -> Report:
+    """분석할 보고서. 없으면 404, 파일을 아직 못 받았으면 400."""
+    report = get_or_404(db, Report, report_id, "보고서를 찾을 수 없습니다.")
+    if not report.file_path:
+        raise HTTPException(400, "보고서 파일이 아직 다운로드되지 않았습니다.")
+    return report
 
 
 @router.post("/api/reports/{report_id}/analyze", response_model=AnalysisResponse, dependencies=[Depends(require_admin)])
@@ -60,37 +30,22 @@ def analyze_report(
     db: Session = Depends(get_db),
 ):
     """특정 분석 유형 1개를 요청. 큐에 report_id를 투입해 combined worker가 처리."""
-    report = get_or_404(db, Report, report_id, "보고서를 찾을 수 없습니다.")
-    if not report.file_path:
-        raise HTTPException(400, "보고서 파일이 아직 다운로드되지 않았습니다.")
+    report = _downloaded_report(db, report_id)
 
-    existing = db.query(Analysis).filter_by(
-        company_id=report.company_id,
-        report_id=report.id,
-        analysis_type=body.analysis_type,
-    ).first()
-    analysis = _reset_or_create_analysis(db, report, body.analysis_type, existing)
+    q = db.query(Analysis).filter_by(report_id=report.id, analysis_type=body.analysis_type)
+    svc.mark_pending(db, report, {a.analysis_type: a for a in q}, [body.analysis_type],
+                     skip_completed=False)
     db.commit()
-    db.refresh(analysis)
     enqueue(report.id)  # report_id 기반 큐 — worker가 pending 항목 일괄 처리
-    return AnalysisResponse.model_validate(analysis)
+    return AnalysisResponse.model_validate(q.one())
 
 
 @router.post("/api/reports/{report_id}/analyze-all", dependencies=[Depends(require_admin)])
 def analyze_report_all(report_id: int, db: Session = Depends(get_db)):
     """보고서의 모든 분석 유형(3종)을 pending으로 설정하고 report_id를 큐에 1회 투입."""
-    report = get_or_404(db, Report, report_id, "보고서를 찾을 수 없습니다.")
-    if not report.file_path:
-        raise HTTPException(400, "보고서 파일이 아직 다운로드되지 않았습니다.")
+    report = _downloaded_report(db, report_id)
 
-    existing_by_type = {
-        a.analysis_type: a
-        for a in db.query(Analysis).filter_by(report_id=report.id).all()
-    }
-    _queue_report_types(db, report, existing_by_type, skip_completed=False)
-    db.commit()
-
-    enqueue(report.id)  # 중복 투입은 enqueue 내부에서 무시
+    queue_report(db, report, skip_completed=False)
     return {
         "message": f"{len(ANALYSIS_TYPES)}가지 분석이 큐에 추가되었습니다. (Gemini 1회 호출)",
         "queued": len(ANALYSIS_TYPES),
@@ -120,7 +75,7 @@ def analyze_all(company_id: int, db: Session = Depends(get_db)):
     report_ids_to_queue = [
         report.id
         for report in reports
-        if _queue_report_types(db, report, by_report.get(report.id, {}), skip_completed=True)
+        if svc.mark_pending(db, report, by_report.get(report.id, {}))
     ]
 
     db.commit()  # 워커가 미커밋 상태를 읽지 않도록 enqueue 전에 커밋
@@ -145,15 +100,16 @@ def get_analysis(analysis_id: int, db: Session = Depends(get_db)):
     return AnalysisResponse.model_validate(analysis)
 
 
-@router.get("/api/companies/{company_id}/analyses", response_model=list[AnalysisResponse])
+@router.get("/api/companies/{company_id}/analyses", response_model=list[AnalysisState])
 def get_company_analyses(company_id: int, db: Session = Depends(get_db)):
-    analyses = (
+    return (
         db.query(Analysis)
+        .options(load_only(Analysis.id, Analysis.report_id, Analysis.analysis_type,
+                           Analysis.status, Analysis.updated_at))
         .filter(Analysis.company_id == company_id)
         .order_by(Analysis.report_id.desc(), Analysis.analysis_type)
         .all()
     )
-    return [AnalysisResponse.model_validate(a) for a in analyses]
 
 
 @router.get("/api/queue/status", response_model=QueueStatus)

@@ -13,6 +13,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.constants import TechStatus
 from app.models import Report, Technology, TechCompany
 from app.services import api_usage, patent_search, tech_pipeline
 
@@ -30,18 +31,21 @@ class ScanIncomplete(RuntimeError):
 PAGES = 2
 
 
-def get_keywords(tech: Technology) -> list[str]:
+def json_list(raw: str | None, typ: type = str) -> list:
+    """JSON 배열 텍스트 컬럼 → 리스트. 깨졌거나 모양이 다르면 빈 목록 — 화면·스캔이 죽지 않게."""
     try:
-        return [k for k in json.loads(tech.keywords or "[]") if isinstance(k, str)]
+        v = json.loads(raw or "[]")
     except json.JSONDecodeError:
         return []
+    return [x for x in v if isinstance(x, typ)] if isinstance(v, list) else []
+
+
+def get_keywords(tech: Technology) -> list[str]:
+    return json_list(tech.keywords)
 
 
 def get_ipc_core(tech: Technology) -> list[str]:
-    try:
-        return [g for g in json.loads(tech.ipc_core or "[]") if isinstance(g, str)]
-    except json.JSONDecodeError:
-        return []
+    return json_list(tech.ipc_core)
 
 
 async def search_in_core(db: Session, tech: Technology, keywords: list[str],
@@ -85,9 +89,7 @@ def _merge(db: Session, tech: Technology, matched: dict, now: datetime) -> dict:
     existing = {tc.applicant_name: tc for tc in
                 db.query(TechCompany).filter(TechCompany.technology_id == tech.id).all()}
 
-    rows = [("tracked", x) for x in matched["tracked"]] \
-        + [("available", x) for x in matched["available"]] \
-        + [("excluded", x) for x in matched["excluded"]]
+    rows = [(s, x) for s in TechStatus for x in matched[s]]
 
     new_count = 0
     for status, x in rows:
@@ -112,20 +114,18 @@ def _merge(db: Session, tech: Technology, matched: dict, now: datetime) -> dict:
     return {"new": new_count, "kept": len(rows) - new_count, "dropped": dropped}
 
 
-async def scan(db: Session, tech: Technology, pages: int = PAGES, top: int | None = None,
-               onboard: bool = False) -> dict:
+async def scan(db: Session, tech: Technology, onboard: bool = False) -> dict:
     """기술 1건 스캔. onboard=True면 available 상위를 등록하고 분석까지 건다."""
     keywords = get_keywords(tech)
     if not keywords:
         raise ScanIncomplete("검색 키워드가 없습니다. 기술을 먼저 저장하세요.")
 
-    results, new_core = await search_in_core(db, tech, keywords, pages)
+    results, new_core = await search_in_core(db, tech, keywords, PAGES)
     applicants, kw_hits, patents = patent_search.aggregate_applicants(results)
-    matched = patent_search.match_companies(db, applicants, limit=top, keywords=kw_hits,
-                                            patents=patents)
+    matched = patent_search.match_companies(db, applicants, kw_hits, patents)
 
     searched = [{"word": r["word"], "total": r["total"],
-                 "broad": r["total"] > patent_search.BROAD_THRESHOLD} for r in results]
+                 "broad": patent_search.is_broad(r["total"])} for r in results]
 
     now = datetime.utcnow()
     stats = _merge(db, tech, matched, now)
@@ -150,9 +150,7 @@ async def scan(db: Session, tech: Technology, pages: int = PAGES, top: int | Non
         "keywords": keywords,
         "searched": searched,
         "applicants": len(applicants),
-        "tracked": len(matched["tracked"]),
-        "available": len(matched["available"]),
-        "excluded": len(matched["excluded"]),
+        **{s: len(matched[s]) for s in TechStatus},
         **stats,
         "onboarded": onboarded,
     }
@@ -180,8 +178,8 @@ def _onboard_targets(db: Session, matched: dict) -> list[dict]:
     순서 기준은 `tech_pipeline.rank`(최근 출원 건수 → 누적 건수)이고, 후보가 상한보다
     많으면 `order_candidates`가 적합도 판정을 앞에 붙인다.
     """
-    return tech_pipeline.rank(matched["available"]
-                              + _tracked_without_report(db, matched["tracked"]))
+    return tech_pipeline.rank(matched[TechStatus.AVAILABLE]
+                              + _tracked_without_report(db, matched[TechStatus.TRACKED]))
 
 
 def _promote(db: Session, tech: Technology, onboarded: dict) -> None:
@@ -196,9 +194,9 @@ def _promote(db: Session, tech: Technology, onboarded: dict) -> None:
         return
     for tc in db.query(TechCompany).filter(
             TechCompany.technology_id == tech.id,
-            TechCompany.status == "available").all():
+            TechCompany.status == TechStatus.AVAILABLE).all():
         # 여기서 비교하는 corp_name은 양쪽 다 DART 표기다(특허 출원인명이 아니다)
         if tc.corp_name in by_name:
-            tc.status = "tracked"
+            tc.status = TechStatus.TRACKED
             tc.company_id = by_name[tc.corp_name]
     db.commit()

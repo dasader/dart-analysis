@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Date, Text,
@@ -99,6 +100,10 @@ class BatchJob(Base):
     submitted_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 
+    @property
+    def report_id_list(self) -> list[int]:
+        return json.loads(self.report_ids)
+
 
 class PromptTemplate(Base):
     __tablename__ = "prompt_templates"
@@ -107,7 +112,9 @@ class PromptTemplate(Base):
     analysis_type = Column(String, unique=True, nullable=False)
     label = Column(String, nullable=False)
     system_prompt = Column(Text, nullable=False)
-    user_prompt_template = Column(Text, nullable=False)
+    # 쓰지 않는다 — 분석은 system_prompt만 읽고 보고서 본문은 build_prompts가 붙인다.
+    # 기존 DB가 NOT NULL로 만들어져 있어(SQLite는 컬럼 삭제에 마이그레이션이 필요) 빈 값으로 남긴다
+    user_prompt_template = Column(Text, nullable=False, default="")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

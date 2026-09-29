@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.constants import EXTRACTION_FAILED_PREFIX, AnalysisStatus
 from app.database import SessionLocal
-from app.models import Analysis, BatchJob
+from app.models import Analysis, BatchJob, Report
 from app.services import analysis_service as svc
 from app.services import app_settings
 from app.services import gemini_batch as batch
@@ -38,6 +38,20 @@ def enqueue(report_id: int) -> None:
     _queued_ids.add(report_id)
 
 
+def queue_report(db: Session, report: Report, skip_completed: bool = True) -> int:
+    """보고서 분석 3종을 pending으로 만들고 커밋한 뒤 큐에 넣는다. pending이 된 유형 수를 반환.
+
+    커밋이 enqueue보다 먼저다 — 워커가 미커밋 상태를 읽으면 대상이 비어 보인다.
+    """
+    existing = {a.analysis_type: a for a in
+                db.query(Analysis).filter(Analysis.report_id == report.id).all()}
+    n = svc.mark_pending(db, report, existing, skip_completed=skip_completed)
+    if n:
+        db.commit()
+        enqueue(report.id)
+    return n
+
+
 def get_queue_info() -> dict:
     """대기 건수 + 진행 중인 batch 작업 요약."""
     db = SessionLocal()
@@ -51,7 +65,7 @@ def get_queue_info() -> dict:
         return {
             "pending_count": _queue.qsize(),
             "running_batches": len(running),
-            "running_reports": sum(len(json.loads(j.report_ids)) for j in running),
+            "running_reports": sum(len(j.report_id_list) for j in running),
         }
     finally:
         db.close()
@@ -69,7 +83,7 @@ def requeue_orphans() -> int:
         for j in db.query(BatchJob).filter(
             BatchJob.state.notin_(list(batch.TERMINAL_STATES))
         ).all():
-            in_flight.update(json.loads(j.report_ids))
+            in_flight.update(j.report_id_list)
 
         orphans = {
             rid for (rid,) in db.query(Analysis.report_id)
@@ -87,12 +101,13 @@ def requeue_orphans() -> int:
 
 def _build_request(db: Session, report_id: int) -> str | None:
     """report 1건의 JSONL 줄을 만든다. 불가하면 해당 분석을 failed로 두고 None."""
-    pending = svc.get_pending(db, report_id)
+    pending = svc.get_by_status(db, report_id, AnalysisStatus.PENDING)
     if not pending:
         return None
 
     try:
-        raw_text = extract_text_from_report(pending[0].report.file_path)
+        report = pending[0].report
+        raw_text = extract_text_from_report(report.file_path, report.rcept_no)
         if not raw_text:
             raise ValueError("보고서 텍스트를 추출할 수 없습니다.")
 
@@ -151,9 +166,7 @@ async def worker() -> None:
             try:
                 lines, submitted_ids = [], []
                 for rid in report_ids:
-                    line = await asyncio.get_running_loop().run_in_executor(
-                        None, _build_request, db, rid
-                    )
+                    line = await asyncio.to_thread(_build_request, db, rid)
                     if line:
                         lines.append(line)
                         submitted_ids.append(rid)
@@ -167,7 +180,7 @@ async def worker() -> None:
                 except Exception as e:
                     logger.exception("batch 제출 실패")
                     for rid in submitted_ids:
-                        svc.mark_failed(db, svc.get_running(db, rid), f"batch 제출 실패: {e}")
+                        svc.mark_failed(db, svc.get_by_status(db, rid, AnalysisStatus.RUNNING), f"batch 제출 실패: {e}")
                     continue
 
                 db.add(BatchJob(

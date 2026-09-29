@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   fetchCompany,
   fetchReports,
@@ -18,28 +18,18 @@ import DownloadModal from "../components/DownloadModal";
 import TagChip from "../components/TagChip";
 import AdminButton from "../components/AdminButton";
 import { getErrorMessage } from "../lib/errors";
-import type { Company, Report, Analysis, Tag } from "../types";
-
-// 폴링 시 분석 상태가 실제로 바뀌었을 때만 setState 하기 위한 비교
-function analysesEqual(a: Analysis[], b: Analysis[]): boolean {
-  return (
-    a.length === b.length &&
-    a.every(
-      (x, i) =>
-        x.id === b[i].id &&
-        x.status === b[i].status &&
-        x.updated_at === b[i].updated_at,
-    )
-  );
-}
+import { analysesEqual, isInProgress } from "../lib/status";
+import { usePolling } from "../hooks/usePolling";
+import type { Company, Report, AnalysisState, Tag } from "../types";
 
 export default function CompanyDetail() {
   const { id } = useParams<{ id: string }>();
   const companyId = Number(id);
+  const navigate = useNavigate();
 
   const [company, setCompany] = useState<Company | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
-  const [analyses, setAnalyses] = useState<Analysis[]>([]);
+  const [analyses, setAnalyses] = useState<AnalysisState[]>([]);
   const [showDownload, setShowDownload] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
@@ -47,21 +37,27 @@ export default function CompanyDetail() {
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
 
-  const showToast = (msg: string, type: "ok" | "err" = "ok") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 4000);
-  };
+  const showToast = (msg: string, type: "ok" | "err" = "ok") => setToast({ msg, type });
+  // 토스트마다 타이머를 새로 건다 — 앞 타이머가 새 토스트를 일찍 닫거나 언마운트 뒤 setState하지 않게
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
-  const load = useCallback(async () => {
-    const [companyData, reps, anals] = await Promise.all([
-      fetchCompany(companyId).catch(() => null),
-      fetchReports(companyId),
-      fetchCompanyAnalyses(companyId),
-    ]);
-    setCompany(companyData);
-    setReports(reps);
-    setAnalyses(anals);
-  }, [companyId]);
+  const load = useCallback(
+    () =>
+      Promise.all([
+        fetchCompany(companyId).catch(() => null),
+        fetchReports(companyId),
+        fetchCompanyAnalyses(companyId),
+      ]).then(([companyData, reps, anals]) => {
+        setCompany(companyData);
+        setReports(reps);
+        setAnalyses(anals);
+      }),
+    [companyId],
+  );
 
   // 비동기 액션 공통 처리: 성공 메시지 토스트 + 재로딩, 실패 시 에러 토스트
   const runWithToast = async (action: () => Promise<string | void>) => {
@@ -76,14 +72,15 @@ export default function CompanyDetail() {
 
   // 폴링 전용: 회사/태그는 건너뛰고 보고서와 분석만 갱신.
   // 보고서도 함께 받아야 목록의 분석 상태가 같이 최신이 된다.
-  const refreshProgress = useCallback(async () => {
+  // usePolling이 항상 최신 함수를 부르므로 useCallback이 필요 없다
+  const refreshProgress = async () => {
     const [reps, next] = await Promise.all([
       fetchReports(companyId),
       fetchCompanyAnalyses(companyId),
     ]);
     setReports(reps);
     setAnalyses((prev) => (analysesEqual(prev, next) ? prev : next));
-  }, [companyId]);
+  };
 
   useEffect(() => {
     load();
@@ -91,16 +88,7 @@ export default function CompanyDetail() {
 
   // 진행 중인 분석이 하나라도 있으면 화면 어디에 있든 갱신한다.
   // Batch는 분 단위라 10초 간격이면 충분하다.
-  const hasActiveJob = analyses.some(
-    (a) => a.status === "pending" || a.status === "running",
-  );
-  useEffect(() => {
-    if (!hasActiveJob) return;
-    const timer = setInterval(() => {
-      refreshProgress().catch(() => {});
-    }, 10000);
-    return () => clearInterval(timer);
-  }, [hasActiveJob, refreshProgress]);
+  usePolling(refreshProgress, 10000, analyses.some(isInProgress));
 
   // 태그 목록은 거의 불변 → 마운트 시 1회만 조회
   useEffect(() => {
@@ -119,8 +107,12 @@ export default function CompanyDetail() {
 
   const handleDelete = async () => {
     if (!confirm("이 기업과 관련 데이터를 모두 삭제하시겠습니까?")) return;
-    await deleteCompany(companyId);
-    window.location.href = "/";
+    try {
+      await deleteCompany(companyId);
+      navigate("/");
+    } catch (e) {
+      showToast(getErrorMessage(e), "err");
+    }
   };
 
   const handleAssignTag = async (tagId: number) => {

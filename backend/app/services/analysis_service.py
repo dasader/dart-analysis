@@ -4,7 +4,7 @@ import re
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.constants import MALFORMED_RESPONSE_PREFIX, AnalysisStatus
+from app.constants import ANALYSIS_TYPES, MALFORMED_RESPONSE_PREFIX, AnalysisStatus
 from app.models import Analysis, PromptTemplate, Report
 
 logger = logging.getLogger(__name__)
@@ -57,12 +57,28 @@ def get_by_status(db: Session, report_id: int, status: str) -> list[Analysis]:
     )
 
 
-def get_pending(db: Session, report_id: int) -> list[Analysis]:
-    return get_by_status(db, report_id, AnalysisStatus.PENDING)
+def mark_pending(db: Session, report: Report, existing: dict[str, Analysis],
+                 types: tuple[str, ...] | list[str] = ANALYSIS_TYPES,
+                 skip_completed: bool = True) -> int:
+    """분석을 pending으로 만든다 — 있으면 되돌리고 없으면 만든다. 커밋·큐 투입은 호출자가 한다.
 
-
-def get_running(db: Session, report_id: int) -> list[Analysis]:
-    return get_by_status(db, report_id, AnalysisStatus.RUNNING)
+    skip_completed=True면 이미 완료된 유형은 건너뛴다(비용이 곱해지므로 다시 돌리지 않는다).
+    existing은 미리 조회한 {유형: Analysis}라 여러 보고서를 묶을 때 N+1이 생기지 않는다.
+    반환: pending이 된 유형 수.
+    """
+    n = 0
+    for atype in types:
+        a = existing.get(atype)
+        if skip_completed and a and a.status == AnalysisStatus.COMPLETED:
+            continue
+        if a:
+            a.status = AnalysisStatus.PENDING
+            a.error_message = None
+        else:
+            db.add(Analysis(company_id=report.company_id, report_id=report.id,
+                            analysis_type=atype, status=AnalysisStatus.PENDING))
+        n += 1
+    return n
 
 
 def build_prompts(
@@ -99,7 +115,7 @@ def build_prompts(
 
 {{{keys_desc}: "마크다운 텍스트"}}"""
 
-    # user_prompt_template들은 보고서 부분이 동일 → 보고서는 한 번만 첨부하고 분석 지시만 결합
+    # 보고서는 한 번만 첨부하고 분석 지시(system_prompt)만 유형별로 결합한다
     user_prompt = (
         f"아래는 {report.company.corp_name}의 {report.fiscal_year}년 사업보고서 전문입니다.\n"
         f"위의 {len(types_to_run)}가지 분석을 모두 수행하고 JSON으로 반환해주세요.\n\n"

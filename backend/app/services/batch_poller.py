@@ -8,6 +8,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.constants import AnalysisStatus
 from app.database import SessionLocal
 from app.models import BatchJob
 from app.services import analysis_service as svc
@@ -32,7 +33,7 @@ def _distribute(db: Session, job: BatchJob, lines: list[str]) -> tuple[int, int]
             continue
 
         seen.add(report_id)
-        running = svc.get_running(db, report_id)
+        running = svc.get_by_status(db, report_id, AnalysisStatus.RUNNING)
         if not running:
             logger.warning("running 분석이 없어 결과를 버림: report_id=%d", report_id)
             continue
@@ -45,8 +46,8 @@ def _distribute(db: Session, job: BatchJob, lines: list[str]) -> tuple[int, int]
             ok += 1
 
     # 결과 줄이 아예 오지 않은 보고서 — 원인 불명이므로 실패로 남긴다
-    for report_id in set(json.loads(job.report_ids)) - seen:
-        running = svc.get_running(db, report_id)
+    for report_id in set(job.report_id_list) - seen:
+        running = svc.get_by_status(db, report_id, AnalysisStatus.RUNNING)
         if running:
             svc.mark_failed(db, running, "batch 결과에 해당 요청의 응답이 없습니다.")
             failed += 1
@@ -104,9 +105,9 @@ async def poll_batches() -> None:
 
 
 def _fail_all(db: Session, job: BatchJob, message: str) -> None:
-    report_ids = json.loads(job.report_ids)
+    report_ids = job.report_id_list
     for report_id in report_ids:
-        running = svc.get_running(db, report_id)
+        running = svc.get_by_status(db, report_id, AnalysisStatus.RUNNING)
         if running:
             svc.mark_failed(db, running, message)
     job.failed_count = len(report_ids)

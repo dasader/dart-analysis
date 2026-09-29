@@ -537,8 +537,7 @@ def test_source_mentions_fold_duplicates(db, tech, monkeypatch):
     """원문에 같은 문장이 두 번 실리면(임원 보수 사유 등) 칸만 먹는다 — 사업화 신호가 밀려난다."""
     block = "x" * 150 + "반복 문장 전고체 사업. " + "x" * 150
     body = block * 2 + "BMW와 전고체 배터리 실증 프로젝트 업무협약"
-    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: body)
-    hits = tech_report._mentions_in_source(Report(id=1, file_path="f"), ["전고체"])
+    hits = tech_report._mentions_in_source(body, ["전고체"])
     assert len(hits) == 2
     assert any("실증 프로젝트" in h for h in hits)
 
@@ -632,11 +631,11 @@ def test_analysis_mention_needs_term_in_source(db, tech, monkeypatch):
                        corp_name="가완성차", patent_count=20, status="tracked", keyword_hits="[]"))
     db.commit()
     db.refresh(tech)
-    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: "Factorial 지분 1.76% 보유")
+    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda *_: "Factorial 지분 1.76% 보유")
     md, _ = tech_report._company_section(db, tech, ["전고체"])
     assert "| 가완성차 | 관심·검토 |" in md
 
     # 원문에 용어가 있으면 분석 문장도 근거로 받는다
-    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda _: "전고체 배터리 개발")
+    monkeypatch.setattr(tech_report, "extract_text_from_report", lambda *_: "전고체 배터리 개발")
     md, _ = tech_report._company_section(db, tech, ["전고체"])
     assert "| 가완성차 | ? |" in md

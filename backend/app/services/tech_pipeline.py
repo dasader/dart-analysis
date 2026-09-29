@@ -11,14 +11,13 @@ import json
 import logging
 from datetime import datetime
 
-from google import genai
 from google.genai import types
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.constants import ANALYSIS_TYPES, REPORT_TYPE_ANNUAL, AnalysisStatus
-from app.models import Analysis, Company, DartCorp, Report
-from app.services.analysis_queue import enqueue
+from app.config import gemini
+from app.constants import REPORT_TYPE_ANNUAL
+from app.models import Company, DartCorp, Report
+from app.services.analysis_queue import queue_report
 from app.services.dart_client import list_reports
 from app.services.report_service import create_report_from_dart
 
@@ -64,9 +63,6 @@ FIT_PROMPT = """기술: {name}
 
 JSON 배열로만 답하라: [{{"corp": "기업명", "role": "core|peripheral|unrelated", "reason": "15자 이내"}}]"""
 
-_client: genai.Client | None = None
-
-
 def rank(cands: list[dict]) -> list[dict]:
     """판정(없으면 동률) → 최근 출원 건수 → 누적 건수 순."""
     return sorted(cands, key=lambda x: (ROLE_RANK.get(x.get("role"), 1),
@@ -75,15 +71,12 @@ def rank(cands: list[dict]) -> list[dict]:
 
 def _judge_sync(name: str, description: str, cands: list[dict],
                 patents: dict[str, list[dict]]) -> dict[str, dict]:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
     rows = []
     for x in cands:
         titles = "\n".join(f"    - {it.get('app_date', '')[:4]} {it.get('status', '')} {it.get('title', '')}"
                            for it in patents.get(x["applicant"], [])[:FIT_TITLES])
         rows.append(f"## {x['corp_name']} (특허 {x['patents']}건)\n{titles}")
-    r = _client.models.generate_content(
+    r = gemini().models.generate_content(
         model=FIT_MODEL,
         contents=FIT_PROMPT.format(name=name, description=description, rows="\n".join(rows)),
         config=types.GenerateContentConfig(
@@ -159,28 +152,6 @@ async def ensure_latest_report(db: Session, company: Company, year: int | None =
         return have
 
 
-def queue_analysis(db: Session, report: Report) -> int:
-    """보고서의 미완료 분석을 pending으로 만들고 큐에 넣는다. 새로 잡힌 유형 수를 반환."""
-    existing = {a.analysis_type: a for a in
-                db.query(Analysis).filter(Analysis.report_id == report.id).all()}
-    queued = 0
-    for atype in ANALYSIS_TYPES:
-        a = existing.get(atype)
-        if a and a.status == AnalysisStatus.COMPLETED:
-            continue        # 이미 분석된 건 다시 돌리지 않는다 — 비용이 곱해진다
-        if a:
-            a.status = AnalysisStatus.PENDING
-            a.error_message = None
-        else:
-            db.add(Analysis(company_id=report.company_id, report_id=report.id,
-                            analysis_type=atype, status=AnalysisStatus.PENDING))
-        queued += 1
-    if queued:
-        db.commit()
-        enqueue(report.id)
-    return queued
-
-
 async def onboard(db: Session, candidates: list[dict], max_companies: int,
                   year: int | None = None) -> dict:
     """미등록 후보를 등록하고 보고서를 확보한 뒤 분석 큐에 넣는다.
@@ -207,7 +178,7 @@ async def onboard(db: Session, candidates: list[dict], max_companies: int,
             continue
         with_report.append((company, report))
 
-        if queue_analysis(db, report):
+        if queue_report(db, report):
             queued_reports += 1
 
     return {

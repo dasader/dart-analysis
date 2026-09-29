@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link } from "react-router-dom";
 import remarkGfm from "remark-gfm";
@@ -21,8 +22,9 @@ const PROSE_CLASSES = `
 `.trim();
 
 /** 모델이 뱉은 마크다운을 렌더한다. 표 구분선 누락은 normalizeTables가 보정한다
- *  — 프롬프트를 고쳐도 100%를 기대할 수는 없다. */
-export default function Markdown({ children }: { children: string }) {
+ *  — 프롬프트를 고쳐도 100%를 기대할 수는 없다.
+ *  memo: 본문은 문자열이라 얕은 비교로 충분하다 — 부모가 다시 그려질 때(입력·폴링·탭) 재파싱하지 않는다. */
+export default memo(function Markdown({ children }: { children: string }) {
   return (
     <article className={PROSE_CLASSES}>
       <ReactMarkdown
@@ -42,4 +44,4 @@ export default function Markdown({ children }: { children: string }) {
       </ReactMarkdown>
     </article>
   );
-}
+});

@@ -23,11 +23,10 @@ from datetime import datetime
 import httpx
 
 from app.config import settings
+from app.services.dart_client import DART_BASE
 from app.database import SessionLocal, engine
 from app.migrate import run as run_migrations
 from app.models import DartCorp
-
-DART_BASE = "https://opendart.fss.or.kr/api"
 
 
 def load_corp_list(db) -> int:

@@ -9,6 +9,8 @@ import {
 import { getErrorMessage } from "../lib/errors";
 import AdminButton from "../components/AdminButton";
 import type { BatchJob, ExtractionFailure, QueueStatus } from "../types";
+import { usePolling } from "../hooks/usePolling";
+import { formatDateTime, parseServerTime } from "../lib/format";
 
 /** JOB_STATE_* → 한글 라벨 + 배지 색 */
 const STATE_LABEL: Record<string, { text: string; cls: string }> = {
@@ -22,7 +24,7 @@ const STATE_LABEL: Record<string, { text: string; cls: string }> = {
 
 function elapsed(from: string | null, to: string | null): string {
   if (!from) return "-";
-  const ms = new Date(to ?? Date.now()).getTime() - new Date(from).getTime();
+  const ms = (to ? parseServerTime(to).getTime() : Date.now()) - parseServerTime(from).getTime();
   const min = Math.floor(ms / 60000);
   if (min < 60) return `${min}분`;
   return `${Math.floor(min / 60)}시간 ${min % 60}분`;
@@ -30,9 +32,7 @@ function elapsed(from: string | null, to: string | null): string {
 
 function formatTime(iso: string | null): string {
   if (!iso) return "-";
-  return new Date(iso).toLocaleString("ko-KR", {
-    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
-  });
+  return formatDateTime(iso, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function BatchList() {
@@ -53,12 +53,16 @@ export default function BatchList() {
       .catch((e) => setError(getErrorMessage(e)))
       .finally(() => setLoading(false));
 
-  // 진행 중인 작업이 있으면 주기적으로 갱신 (batch turnaround는 분 단위)
   useEffect(() => {
     load();
-    const timer = setInterval(load, 15000);
-    return () => clearInterval(timer);
   }, []);
+  // 진행 중인 작업(제출 대기·처리 중)이 있으면 15초, 한가하면 60초마다 갱신한다(batch는 분 단위).
+  // 한가할 때도 멈추지 않는 건 스케줄러·다른 화면이 새로 제출한 작업이 여기 저절로 나타나게 하기 위해서다
+  const active =
+    jobs.some((j) => !j.is_terminal) ||
+    (queue?.pending_count ?? 0) > 0 ||
+    (queue?.running_batches ?? 0) > 0;
+  usePolling(load, active ? 15000 : 60000);
 
   const handleCancel = async (job: BatchJob) => {
     if (!window.confirm(`이 작업을 취소할까요? (보고서 ${job.report_ids.length}건)`)) return;
@@ -70,27 +74,27 @@ export default function BatchList() {
     }
   };
 
-  if (loading) return <div className="p-6 text-muted">불러오는 중...</div>;
+  if (loading) return <div className="p-6 text-text-secondary">불러오는 중...</div>;
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div>
       <div className="mb-6 flex items-baseline justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">분석 작업 현황</h1>
-          <p className="mt-1 text-sm text-muted">
+          <p className="mt-1 text-sm text-text-secondary">
             분석은 Gemini Batch API로 처리됩니다. 통상 수 분 내 완료되며, 최대 24시간까지
             걸릴 수 있습니다.
           </p>
         </div>
         {queue && (
           <div className="flex gap-4 text-sm">
-            <span className="text-muted">
-              제출 대기 <b className="text-foreground">{queue.pending_count}</b>
+            <span className="text-text-secondary">
+              제출 대기 <b className="text-text-primary">{queue.pending_count}</b>
             </span>
-            <span className="text-muted">
-              처리중 <b className="text-foreground">{queue.running_batches}</b>개 작업
+            <span className="text-text-secondary">
+              처리중 <b className="text-text-primary">{queue.running_batches}</b>개 작업
               {" / "}
-              <b className="text-foreground">{queue.running_reports}</b>개 보고서
+              <b className="text-text-primary">{queue.running_reports}</b>개 보고서
             </span>
           </div>
         )}
@@ -137,13 +141,13 @@ export default function BatchList() {
       )}
 
       {jobs.length === 0 ? (
-        <div className="rounded border border-border bg-white px-6 py-12 text-center text-muted">
+        <div className="rounded border border-border bg-white px-6 py-12 text-center text-text-secondary">
           아직 제출된 분석 작업이 없습니다.
         </div>
       ) : (
         <div className="overflow-x-auto rounded border border-border bg-white">
           <table className="w-full text-sm">
-            <thead className="border-b border-border bg-slate-50 text-left text-xs uppercase text-muted">
+            <thead className="border-b border-border bg-slate-50 text-left text-xs uppercase text-text-secondary">
               <tr>
                 <th className="px-4 py-3 font-medium">제출</th>
                 <th className="px-4 py-3 font-medium">상태</th>
@@ -186,10 +190,10 @@ export default function BatchList() {
                         {job.failed_count}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-muted">
+                    <td className="px-4 py-3 whitespace-nowrap text-text-secondary">
                       {elapsed(job.submitted_at, job.completed_at)}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-xs text-muted">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-text-secondary">
                       {job.model_name}
                       <span className="ml-1 opacity-60">({job.thinking_level})</span>
                     </td>

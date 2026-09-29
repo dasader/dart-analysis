@@ -5,8 +5,11 @@ import CompanyForm from "../components/CompanyForm";
 import CompanyEditModal from "../components/CompanyEditModal";
 import TagChip from "../components/TagChip";
 import AdminButton from "../components/AdminButton";
-import { useSort, SortIcon } from "../hooks/useSort";
+import { useSort } from "../hooks/useSort";
+import SortIcon from "../components/SortIcon";
+import { getErrorMessage } from "../lib/errors";
 import type { Company, Tag } from "../types";
+import { formatDate } from "../lib/format";
 
 type SortKey = "corp_name" | "corp_code" | "report_count" | "latest_analysis_date";
 
@@ -21,7 +24,6 @@ export default function CompanyList() {
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
 
   const load = () => {
-    setLoading(true);
     fetchCompanies()
       .then(setCompanies)
       .catch(() => {})
@@ -47,9 +49,9 @@ export default function CompanyList() {
     latest_analysis_date: (c) => c.latest_analysis_date ?? "",
   };
 
+  const q = search.toLowerCase();
   const filtered = companies
     .filter((c) => {
-      const q = search.toLowerCase();
       const matchesSearch =
         c.corp_name.toLowerCase().includes(q) || c.corp_code.toLowerCase().includes(q);
       const matchesTags =
@@ -60,8 +62,12 @@ export default function CompanyList() {
 
   const handleDelete = async (c: Company) => {
     if (!confirm(`"${c.corp_name}"을(를) 삭제하시겠습니까?\n관련 보고서와 분석 데이터가 모두 삭제됩니다.`)) return;
-    await deleteCompany(c.id);
-    load();
+    try {
+      await deleteCompany(c.id);
+      load();
+    } catch (e) {
+      alert(getErrorMessage(e));
+    }
   };
 
   // 상태 → 뱃지 텍스트·색상 (마크업은 1곳으로 통일)
@@ -235,7 +241,7 @@ export default function CompanyList() {
                   </td>
                   <td className="px-6 py-4 text-text-secondary">
                     {c.latest_analysis_date
-                      ? new Date(c.latest_analysis_date).toLocaleDateString("ko-KR")
+                      ? formatDate(c.latest_analysis_date)
                       : "—"}
                   </td>
                   <td className="px-6 py-4 text-center">{getStatusBadge(c)}</td>
@@ -274,7 +280,10 @@ export default function CompanyList() {
         onCreated={load}
       />
 
+      {/* key: 기업이 바뀔 때마다 새로 만든다 — 입력칸 초기값(useState)은 처음 만들 때 한 번만 쓰이므로,
+          없으면 빈칸이나 직전 기업의 값이 남고 저장 시 이름·활성 여부를 덮어쓴다 */}
       <CompanyEditModal
+        key={editTarget?.id ?? 0}
         company={editTarget}
         onClose={() => setEditTarget(null)}
         onUpdated={load}

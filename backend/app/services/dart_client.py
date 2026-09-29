@@ -69,8 +69,7 @@ async def _load_corp_list() -> list[dict]:
         return _corp_cache
 
     resp = await _dart_get("corpCode.xml", {})
-    loop = asyncio.get_running_loop()
-    corps = await loop.run_in_executor(None, _parse_corp_zip, resp.content)
+    corps = await asyncio.to_thread(_parse_corp_zip, resp.content)
     _corp_cache = corps
     _corp_cache_at = now
     return corps

@@ -1,5 +1,8 @@
-from pydantic_settings import BaseSettings
+from functools import cache
 from pathlib import Path
+
+from google import genai
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -24,8 +27,12 @@ class Settings(BaseSettings):
     data_dir: Path = Path("/app/data")
 
     @property
+    def db_path(self) -> Path:
+        return self.data_dir / "db.sqlite3"
+
+    @property
     def db_url(self) -> str:
-        return f"sqlite:///{self.data_dir / 'db.sqlite3'}"
+        return f"sqlite:///{self.db_path}"
 
     @property
     def reports_dir(self) -> Path:
@@ -39,3 +46,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+@cache
+def gemini() -> genai.Client:
+    """Gemini 클라이언트. 처음 부를 때 한 번만 만든다 — import 시점에 만들면 키 없는 환경에서 죽는다."""
+    return genai.Client(api_key=settings.gemini_api_key)

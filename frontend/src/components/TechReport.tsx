@@ -6,7 +6,7 @@ import Markdown from "./Markdown";
  *  "참고 — 참고 — 산업 밖 주체"처럼 흔들렸으므로 느슨하게 맞춘다. */
 const APPENDIX = /^##\s*참고.*산업\s*밖\s*주체.*$/m;
 
-export function splitAppendix(md: string): { body: string; appendix: string | null } {
+function splitAppendix(md: string): { body: string; appendix: string | null } {
   const m = md.match(APPENDIX);
   if (m?.index === undefined) return { body: md, appendix: null };
   return {

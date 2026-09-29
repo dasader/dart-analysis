@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, StrEnum
 
 
 class AnalysisType(str, Enum):
@@ -14,6 +14,17 @@ class AnalysisStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class TechStatus(StrEnum):
+    """기술 ↔ 기업 분류. 처방이 달라 셋으로 나눈다 — 추적 중(분석 있음) / 등록만 하면 됨 / 산업 밖.
+
+    DB·API·dict 키에 그대로 쓰이는 문자열이라 StrEnum이다(`str, Enum`이면 f-string이
+    "TechStatus.TRACKED"가 된다). 정의 순서가 화면·스캔 병합의 순서다."""
+
+    TRACKED = "tracked"
+    AVAILABLE = "available"
+    EXCLUDED = "excluded"
 
 
 # 분석 유형 전체 목록 (일괄 분석·큐 투입 시 순회용)

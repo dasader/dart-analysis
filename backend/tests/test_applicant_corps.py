@@ -1,5 +1,4 @@
 """출원인 벌크 파싱·마이그레이션 검증. 외부 호출 없음."""
-import io
 import zipfile
 from pathlib import Path
 

@@ -84,20 +84,25 @@ class ReportResponse(BaseModel):
 class AnalysisRequest(BaseModel):
     analysis_type: AnalysisType
 
-class AnalysisResponse(BaseModel):
+
+class AnalysisState(BaseModel):
+    """분석 진행 상태만 — 기업 상세의 10초 폴링용. 본문(result_summary)은 수십 KB라 싣지 않는다."""
     id: int
-    company_id: int
     report_id: int
     analysis_type: str
     status: str
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AnalysisResponse(AnalysisState):
+    company_id: int
     result_json: str | None
     result_summary: str | None
     error_message: str | None
     model_name: str | None
     created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class QueueStatus(BaseModel):
@@ -228,11 +233,9 @@ class PromptTemplateResponse(BaseModel):
     analysis_type: str
     label: str
     system_prompt: str
-    user_prompt_template: str
     updated_at: datetime
 
     model_config = {"from_attributes": True}
 
 class PromptTemplateUpdate(BaseModel):
     system_prompt: str
-    user_prompt_template: str
