@@ -80,7 +80,7 @@ def _judge_sync(name: str, description: str, cands: list[dict],
         model=FIT_MODEL,
         contents=FIT_PROMPT.format(name=name, description=description, rows="\n".join(rows)),
         config=types.GenerateContentConfig(
-            temperature=0, max_output_tokens=4096, response_mime_type="application/json",
+            max_output_tokens=4096, response_mime_type="application/json",
             thinking_config=types.ThinkingConfig(thinking_level=FIT_THINKING)))
     return {j["corp"]: j for j in json.loads(r.text or "[]") if isinstance(j, dict) and "corp" in j}
 
